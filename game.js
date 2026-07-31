@@ -659,16 +659,14 @@ function updateUI() {
   const canRoll = isMyTurn && !state.rolling && !state.animatingToken;
 
   if (isLocalMode) {
-    // In local Pass & Play, enable whichever card's turn it currently is!
+    // In local Pass & Play, keep both buttons interactive during turn!
+    bottomDiceBtn.disabled = !canRoll;
+    topDiceBtn.disabled = !canRoll;
     if (activeIdx === 0) {
-      bottomDiceBtn.disabled = !canRoll;
-      topDiceBtn.disabled = true;
-      if (canRoll) bottomDiceBtn.classList.add('turn-glow'); else bottomDiceBtn.classList.remove('turn-glow');
+      bottomDiceBtn.classList.add('turn-glow');
       topDiceBtn.classList.remove('turn-glow');
     } else {
-      topDiceBtn.disabled = !canRoll;
-      bottomDiceBtn.disabled = true;
-      if (canRoll) topDiceBtn.classList.add('turn-glow'); else topDiceBtn.classList.remove('turn-glow');
+      topDiceBtn.classList.add('turn-glow');
       bottomDiceBtn.classList.remove('turn-glow');
     }
   } else {
@@ -762,14 +760,13 @@ function handleDiceClick(clickedPlayerIdx) {
 }
 
 bottomDiceBtn.addEventListener('click', () => {
-  const pIdx = isLocalMode ? 0 : localPlayerIdx;
+  const pIdx = isLocalMode ? state.current : localPlayerIdx;
   handleDiceClick(pIdx);
 });
 
 topDiceBtn.addEventListener('click', () => {
-  if (isLocalMode) {
-    handleDiceClick(1);
-  }
+  const pIdx = isLocalMode ? state.current : 1;
+  handleDiceClick(pIdx);
 });
 
 function executeDiceRollAnimation(playerIdx, val) {
@@ -824,14 +821,17 @@ function executeDiceRollAnimation(playerIdx, val) {
         return;
       }
 
-      if (moves.length === 1) {
-        showTurnBanner('গুটি নড়ছে... 🚀');
+      const allInYard = moves.length > 0 && moves.every(ti => state.tokens[playerIdx][ti].progress === 0);
+
+      if (moves.length === 1 || allInYard) {
+        showTurnBanner(allInYard ? 'গুটি বের হচ্ছে... 🚀' : 'গুটি নড়ছে... 🚀');
+        const chosenToken = moves[0];
         if (!isLocalMode && roomRef) {
           if (playerIdx === localPlayerIdx) {
-            roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: moves[0], dice: val, ts: Date.now() }).catch(err => console.warn(err));
+            roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: chosenToken, dice: val, ts: Date.now() }).catch(err => console.warn(err));
           }
         } else {
-          setTimeout(() => performMove(moves[0], val), 300);
+          setTimeout(() => performMove(chosenToken, val), 300);
         }
         return;
       }
@@ -847,12 +847,8 @@ function executeDiceRollAnimation(playerIdx, val) {
   }, 60);
 }
 
-function performMove(tokenIdx, explicitDice) {
-  // BUG FIX: Capture the current player NOW before any async animation.
-  // Without this, applyRemoteState from the other device can change
-  // state.current mid-animation, causing BOTH devices to call endTurn
-  // (the "turn ping-pong" freeze where turns bounce back and forth).
-  const movedByPlayer = state.current;
+function performMove(tokenIdx, explicitDice, explicitPlayerIdx) {
+  const movedByPlayer = (typeof explicitPlayerIdx === 'number' && !isNaN(explicitPlayerIdx)) ? explicitPlayerIdx : state.current;
 
   const dice = (typeof explicitDice === 'number' && !isNaN(explicitDice) && explicitDice >= 1 && explicitDice <= 6) ? explicitDice : (state.dice || 1);
   state.dice = dice;
@@ -1001,7 +997,7 @@ function attachRoomListeners() {
     const data = snap.val();
     if (!data || data.ts <= lastMoveTs) return;
     lastMoveTs = data.ts;
-    performMove(data.tokenIdx, data.dice);
+    performMove(data.tokenIdx, data.dice, data.playerIdx);
   });
 
   roomRef.child('love').on('value', snap => {
