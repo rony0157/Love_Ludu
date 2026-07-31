@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="theme-color" content="#1a0612" />
+<title>Love Ludu 💞 — Romantic Ludo King</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Hind+Siliguri:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-dark: #12030a;
+    --card-bg: rgba(35, 12, 22, 0.85);
+    --gold: #f3c64f;
+    --gold-glow: rgba(243, 198, 79, 0.4);
+    --rose-red: #d92b4b;
+    --sapphire-blue: #2365c4;
+    --emerald-green: #1ba362;
+    --sun-yellow: #f1aa13;
+    --cream: #fff8f0;
+    --text-light: #fbeee0;
+    --sat: env(safe-area-inset-top, 0px);
+    --sab: env(safe-area-inset-bottom, 0px);
+    --sal: env(safe-area-inset-left, 0px);
+    --sar: env(safe-area-inset-right, 0px);
+  }
+
+  * {
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    overflow: hidden;
+    background: radial-gradient(circle at 50% 20%, #2b0a1d 0%, #15030d 70%, #0a0106 100%);
+    font-family: 'Hind Siliguri', 'Fredoka', sans-serif;
+    color: var(--text-light);
+    touch-action: manipulation;
+  }
+
+  /* App Layout Container */
+  #app {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    height: 100dvh;
+    padding-top: var(--sat);
+    padding-bottom: var(--sab);
+    padding-left: var(--sal);
+    padding-right: var(--sar);
+    position: relative;
+  }
+
+  /* Top & Bottom Player Profile Cards */
+  .player-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: rgba(30, 9, 19, 0.88);
+    backdrop-filter: blur(8px);
+    border: 1.5px solid rgba(243, 198, 79, 0.3);
+    margin: 6px 10px;
+    border-radius: 16px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
+    transition: all 0.25s ease;
+    z-index: 10;
+    flex-shrink: 0;
+  }
+
+  .player-card.active-turn {
+    border-color: var(--gold);
+    box-shadow: 0 0 16px var(--gold-glow);
+    background: linear-gradient(135deg, rgba(65, 18, 40, 0.95), rgba(30, 9, 19, 0.95));
+    transform: scale(1.01);
+  }
+
+  .player-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    border: 2px solid var(--gold);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    background: #2a0c1a;
+    flex-shrink: 0;
+  }
+
+  .player-card.p-red .avatar { border-color: var(--rose-red); }
+  .player-card.p-blue .avatar { border-color: var(--sapphire-blue); }
+
+  .name-box {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .player-name {
+    font-weight: 700;
+    font-size: 15px;
+    color: #fff;
+    line-height: 1.2;
+  }
+
+  .player-status {
+    font-size: 11px;
+    color: var(--gold);
+    opacity: 0.9;
+  }
+
+  .home-counter {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(0, 0, 0, 0.35);
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-weight: 700;
+    font-size: 13px;
+    color: var(--gold);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  /* Center Game Board Container */
+  #board-wrapper {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    width: 100%;
+    padding: 4px;
+    min-height: 0;
+  }
+
+  canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    aspect-ratio: 1 / 1;
+    border-radius: 18px;
+    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.65), 0 0 0 2px rgba(243, 198, 79, 0.4);
+    touch-action: none;
+  }
+
+  /* Turn Status Banner */
+  #turnBanner {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(20, 5, 13, 0.92);
+    backdrop-filter: blur(10px);
+    border: 1.5px solid var(--gold);
+    color: var(--cream);
+    padding: 8px 20px;
+    border-radius: 30px;
+    font-size: 13.5px;
+    font-weight: 700;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s, transform 0.25s;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    z-index: 15;
+    white-space: nowrap;
+  }
+
+  #turnBanner.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.05);
+  }
+
+  /* Dice Dock Container (Embedded inside bottom player card or floating) */
+  .dice-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .dice-btn {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    border: 2px solid var(--gold);
+    background: linear-gradient(135deg, #ffffff, #ffe3ec);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.8);
+    transition: transform 0.15s, box-shadow 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .dice-btn:active {
+    transform: scale(0.92);
+  }
+
+  .dice-btn.turn-glow {
+    animation: dicePulse 1.2s infinite alternate;
+  }
+
+  @keyframes dicePulse {
+    0% { box-shadow: 0 0 6px var(--gold), 0 0 14px var(--gold-glow); transform: scale(1); }
+    100% { box-shadow: 0 0 16px var(--gold), 0 0 24px rgba(243, 198, 79, 0.8); transform: scale(1.08); }
+  }
+
+  .dice-btn:disabled {
+    opacity: 0.5;
+    animation: none;
+    cursor: not-allowed;
+    filter: grayscale(0.6);
+  }
+
+  /* Floating Love Dock */
+  #loveDock {
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 20;
+  }
+
+  .loveBtn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: 1.5px solid var(--gold);
+    background: rgba(35, 12, 22, 0.85);
+    backdrop-filter: blur(6px);
+    font-size: 20px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
+    transition: transform 0.15s, background 0.15s;
+  }
+
+  .loveBtn:active {
+    transform: scale(0.85);
+    background: rgba(217, 43, 75, 0.6);
+  }
+
+  /* Falling Emoji Particles */
+  .rainDrop {
+    position: fixed;
+    z-index: 99;
+    pointer-events: none;
+    top: -10vh;
+    animation: rainFall linear forwards;
+    filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.4));
+  }
+
+  @keyframes rainFall {
+    0% { transform: translateY(0) rotate(0deg) scale(0.8); opacity: 0; }
+    10% { opacity: 1; }
+    85% { opacity: 1; }
+    100% { transform: translateY(115vh) rotate(240deg) scale(1.2); opacity: 0; }
+  }
+
+  /* Modals / Setup Screen */
+  #setup {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(circle at 50% 30%, #3d0c24, #12030a 85%);
+    padding: 16px;
+    padding-top: calc(16px + var(--sat));
+    padding-bottom: calc(16px + var(--sab));
+  }
+
+  .card {
+    background: var(--card-bg);
+    backdrop-filter: blur(12px);
+    border-radius: 24px;
+    padding: 24px 20px;
+    width: min(390px, 92vw);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 0 1.5px var(--gold);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+
+  .card h2 {
+    margin: 0 0 4px;
+    color: var(--gold);
+    text-align: center;
+    font-size: 24px;
+    font-weight: 700;
+  }
+
+  .card p.sub {
+    text-align: center;
+    color: #cca4b1;
+    margin: 0 0 16px;
+    font-size: 13px;
+  }
+
+  .field {
+    margin-bottom: 12px;
+  }
+
+  .field label {
+    display: block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--gold);
+    margin-bottom: 5px;
+  }
+
+  .field input {
+    width: 100%;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1.5px solid rgba(243, 198, 79, 0.4);
+    font-size: 16px;
+    outline: none;
+    background: rgba(15, 4, 10, 0.8);
+    color: #fff;
+    font-family: inherit;
+  }
+
+  .field input:focus {
+    border-color: var(--gold);
+    box-shadow: 0 0 10px var(--gold-glow);
+  }
+
+  .btn-group {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 14px;
+  }
+
+  .lobbyBtn {
+    width: 100%;
+    padding: 13px;
+    border: none;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--rose-red), #8c1027);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    letter-spacing: 0.3px;
+    box-shadow: 0 6px 18px rgba(217, 43, 75, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-family: inherit;
+    transition: transform 0.12s;
+  }
+
+  .lobbyBtn:active { transform: scale(0.97); }
+
+  .lobbyBtn.sec {
+    background: linear-gradient(135deg, #2b70d4, #143d78);
+    box-shadow: 0 6px 18px rgba(35, 101, 196, 0.4);
+  }
+
+  .lobbyBtn.gold {
+    background: linear-gradient(135deg, var(--gold), #b58414);
+    color: #1a0612;
+    box-shadow: 0 6px 18px var(--gold-glow);
+  }
+
+  #roomCodeDisplay {
+    text-align: center;
+    font-size: 32px;
+    font-weight: 800;
+    letter-spacing: 5px;
+    color: var(--gold);
+    background: rgba(10, 2, 7, 0.6);
+    border: 2px dashed var(--gold);
+    border-radius: 16px;
+    padding: 14px 0;
+    margin: 14px 0;
+    cursor: pointer;
+  }
+
+  /* Win Modal */
+  #winOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(15, 3, 10, 0.85);
+    backdrop-filter: blur(10px);
+    padding: 16px;
+  }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Top Player Card (Papri / Opponent) -->
+  <div class="player-card p-blue" id="topPlayerCard">
+    <div class="player-info">
+      <div class="avatar" id="topAvatar">👸</div>
+      <div class="name-box">
+        <div class="player-name" id="topName">পাপড়ি</div>
+        <div class="player-status" id="topStatus">অপেক্ষায়...</div>
+      </div>
+    </div>
+    <div class="home-counter" id="topCounter">
+      <span>🏆</span> <span id="topScore">0/4</span>
+    </div>
+  </div>
+
+  <!-- Central Canvas Game Board Wrapper -->
+  <div id="board-wrapper">
+    <canvas id="luduCanvas" width="900" height="900"></canvas>
+    <div id="turnBanner">তোমার পালা 🎯</div>
+
+    <!-- Floating Love Action Bar -->
+    <div id="loveDock" style="display:none;">
+      <button class="loveBtn" data-type="kiss" title="Kiss">💋</button>
+      <button class="loveBtn" data-type="rose" title="Rose">🌹</button>
+      <button class="loveBtn" data-type="hug" title="Hug">🤗</button>
+      <button class="loveBtn" data-type="care" title="Care">💗</button>
+    </div>
+  </div>
+
+  <!-- Bottom Player Card (Tumi / You) -->
+  <div class="player-card p-red" id="bottomPlayerCard">
+    <div class="player-info">
+      <div class="avatar" id="bottomAvatar">🤵</div>
+      <div class="name-box">
+        <div class="player-name" id="bottomName">তুমি</div>
+        <div class="player-status" id="bottomStatus">তোমার চাল</div>
+      </div>
+    </div>
+    
+    <div class="dice-area">
+      <div class="home-counter" id="bottomCounter">
+        <span>🏆</span> <span id="bottomScore">0/4</span>
+      </div>
+      <button class="diceBtn dice-btn" id="diceBtn" disabled>🎲</button>
+    </div>
+  </div>
+</div>
+
+<!-- Setup / Lobby Screen -->
+<div id="setup">
+  <div class="card" id="lobbyChoose">
+    <h2>Love Ludu 💑</h2>
+    <p class="sub">পাপড়ি ও তোমার জন্য রোমান্টিক লুডু গেম</p>
+    
+    <div class="field">
+      <label>তোমার নাম</label>
+      <input id="myName" maxlength="14" placeholder="যেমন: তুমি" autocomplete="off" value="তুমি" />
+    </div>
+
+    <div class="btn-group">
+      <button id="createRoomBtn" class="lobbyBtn">🌐 নতুন অনলাইন রুম বানাও</button>
+      
+      <div style="text-align:center; margin:4px 0; color:#c796a6; font-size:12px;">— অথবা —</div>
+      
+      <div class="field" style="margin-bottom:6px;">
+        <input id="joinCode" maxlength="6" placeholder="রুম কোড (যেমন: LV9K2)" style="text-transform:uppercase; text-align:center; letter-spacing:2px;" autocomplete="off" />
+      </div>
+      <button id="joinRoomBtn" class="lobbyBtn sec">🔗 অনলাইনে জয়েন করো</button>
+
+      <div style="text-align:center; margin:4px 0; color:#c796a6; font-size:12px;">— অথবা —</div>
+
+      <button id="passPlayBtn" class="lobbyBtn gold">📱 একই ফোনে ২ জন খেলো (Offline)</button>
+    </div>
+    
+    <p id="lobbyError" style="color:#ff6b8b; font-size:12.5px; text-align:center; margin-top:12px; margin-bottom:0;"></p>
+  </div>
+
+  <!-- Room Wait Overlay -->
+  <div class="card" id="lobbyWait" style="display:none;">
+    <h2>রুম রেডি 🎀</h2>
+    <p class="sub">এই কোডটা পাপড়িকে পাঠাও। কোডে চাপ দিলে কপি হবে!</p>
+    <div id="roomCodeDisplay">------</div>
+    <p class="sub" id="waitStatus">⏳ পাপড়ির জয়েন করার অপেক্ষায়...</p>
+  </div>
+</div>
+
+<!-- Win Overlay -->
+<div id="winOverlay">
+  <div class="card" style="text-align:center;">
+    <h2 id="winText">🏆 বিজয়ী!</h2>
+    <p class="sub" id="winSub" style="font-size:15px; margin-top:8px; line-height:1.4;"></p>
+    <button id="playAgainBtn" class="lobbyBtn" style="margin-top:16px;">আবার খেলো 🔄</button>
+  </div>
+</div>
+
+<!-- Firebase & Script Imports -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<script src="firebase-config.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
