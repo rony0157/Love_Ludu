@@ -1,5 +1,5 @@
 /* ============================================================
-   LOVE LUDU 💞 — Real Ludo King Engine with Synchronized Dice & Turns
+   LOVE LUDU 💞 — Real Ludo King Engine (Synchronized & Bug-Free)
    ============================================================ */
 
 const canvas = document.getElementById('luduCanvas');
@@ -112,6 +112,7 @@ let localPlayerIdx = 0; // 0 for host/p1, 1 for guest/p2
 let roomCode = null;
 let roomRef = null;
 let lastRollTs = 0;
+let lastMoveTs = 0;
 let lastStateTs = 0;
 let lastLoveTs = 0;
 let winShown = false;
@@ -264,7 +265,6 @@ function drawBoard() {
   for (let r = 9; r <= 13; r++) { ctx.fillStyle = PALETTE.yellow; ctx.fillRect(7 * cellSize, r * cellSize, cellSize, cellSize); }
   ctx.fillStyle = PALETTE.yellow; ctx.fillRect(6 * cellSize, 13 * cellSize, cellSize, cellSize);
 
-  // Re-stroke grid lines
   ctx.strokeStyle = PALETTE.gridLine;
   ctx.lineWidth = Math.max(1, cellSize * 0.03);
 
@@ -558,7 +558,17 @@ canvas.addEventListener('pointerdown', e => {
     const dist = Math.hypot(tapX - coords.cx, tapY - coords.cy);
 
     if (dist < cellSize * 0.95) {
-      performMove(tokenIdx);
+      if (!isLocalMode && roomRef) {
+        // Broadcast move choice to Firebase
+        roomRef.child('move').set({
+          playerIdx: state.current,
+          tokenIdx: tokenIdx,
+          dice: state.dice,
+          ts: Date.now()
+        });
+      } else {
+        performMove(tokenIdx);
+      }
       break;
     }
   }
@@ -579,18 +589,7 @@ const topDiceBtn = document.getElementById('topDiceBtn');
 const bottomDiceBtn = document.getElementById('bottomDiceBtn');
 const turnBanner = document.getElementById('turnBanner');
 
-function getPerspectivePlayerIdx(cardLocation) {
-  // 'bottom' is ALWAYS local player (or player 0 in local mode)
-  // 'top' is ALWAYS opponent (or player 1 in local mode)
-  if (cardLocation === 'bottom') {
-    return isLocalMode ? state.current : localPlayerIdx;
-  } else {
-    return isLocalMode ? (1 - state.current) : (1 - localPlayerIdx);
-  }
-}
-
 function updateUI() {
-  // Player 0 = Red, Player 1 = Blue
   const hostName = PLAYERS[0].name;
   const guestName = PLAYERS[1].name;
 
@@ -600,7 +599,6 @@ function updateUI() {
     bottomScore.textContent = `${state.finished[0]}/4`;
     topScore.textContent = `${state.finished[1]}/4`;
   } else {
-    // Guest perspective: Guest (P1) is at bottom!
     bottomName.textContent = guestName;
     topName.textContent = hostName;
     bottomScore.textContent = `${state.finished[1]}/4`;
@@ -615,10 +613,10 @@ function updateUI() {
   if (isLocalMode) {
     if (activeIdx === 0) {
       bottomCard.classList.add('active-turn'); topCard.classList.remove('active-turn');
-      bottomStatus.textContent = 'তোমার চাল'; topStatus.textContent = 'অপেক্ষায়...';
+      bottomStatus.textContent = 'তোমার চাল 🎯'; topStatus.textContent = 'অপেক্ষায়...';
     } else {
       topCard.classList.add('active-turn'); bottomCard.classList.remove('active-turn');
-      topStatus.textContent = 'পাপড়ির চাল'; bottomStatus.textContent = 'অপেক্ষায়...';
+      topStatus.textContent = 'পাপড়ির চাল 🎯'; bottomStatus.textContent = 'অপেক্ষায়...';
     }
   } else {
     if (activeIdx === localPlayerIdx) {
@@ -630,7 +628,7 @@ function updateUI() {
     }
   }
 
-  // Dice buttons setup
+  // Configure dice buttons
   const myDiceBtn = bottomDiceBtn;
   const oppDiceBtn = topDiceBtn;
 
@@ -664,25 +662,30 @@ function showTurnBanner(text) {
   setTimeout(() => turnBanner.classList.remove('show'), 2200);
 }
 
-// Trigger Dice Roll
-function startDiceRoll() {
+// Player clicks dice button
+bottomDiceBtn.addEventListener('click', () => {
   if (state.rolling || state.awaitingSelection || state.animatingToken) return;
   if (!isLocalMode && state.current !== localPlayerIdx) return;
 
+  // Active player calculates authoritative dice value
+  const val = 1 + Math.floor(Math.random() * 6);
+
   if (!isLocalMode && roomRef) {
-    // Broadcast roll event to remote player
-    roomRef.child('roll').set({ playerIdx: state.current, ts: Date.now() });
+    // Broadcast roll to Firebase
+    roomRef.child('roll').set({ playerIdx: state.current, val: val, ts: Date.now() });
   } else {
-    executeDiceRollAnimation();
+    executeDiceRollAnimation(state.current, val);
   }
-}
+});
 
-bottomDiceBtn.addEventListener('click', startDiceRoll);
-
-function executeDiceRollAnimation() {
+function executeDiceRollAnimation(playerIdx, val) {
   state.rolling = true;
-  const activeIdx = state.current;
-  const activeDiceBtn = (activeIdx === (isLocalMode ? 0 : localPlayerIdx)) ? bottomDiceBtn : topDiceBtn;
+  state.awaitingSelection = false;
+  state.movable = [];
+
+  // Identify which UI dice button should animate
+  const isMe = isLocalMode ? (playerIdx === 0) : (playerIdx === localPlayerIdx);
+  const activeDiceBtn = isMe ? bottomDiceBtn : topDiceBtn;
 
   activeDiceBtn.classList.add('rolling');
 
@@ -694,7 +697,6 @@ function executeDiceRollAnimation() {
       clearInterval(interval);
       activeDiceBtn.classList.remove('rolling');
 
-      const val = 1 + Math.floor(Math.random() * 6);
       state.dice = val;
       state.rolling = false;
       activeDiceBtn.textContent = DICE_EMOJIS[val - 1];
@@ -705,31 +707,42 @@ function executeDiceRollAnimation() {
         state.consecutiveSixes = 0;
       }
 
-      pushState();
-
       // Check 3 consecutive 6s penalty
       if (state.consecutiveSixes >= 3) {
         showTurnBanner('পর পর ৩টি ৬! চাল বাতিল ⚠️');
         state.consecutiveSixes = 0;
-        setTimeout(() => endTurn(false), 1200);
+        if (isLocalMode || playerIdx === localPlayerIdx) {
+          setTimeout(() => endTurn(false), 1200);
+        }
         return;
       }
 
-      const moves = legalMoves(activeIdx, val);
+      const moves = legalMoves(playerIdx, val);
       if (moves.length === 0) {
         showTurnBanner('কোনো চাল নেই... 😢');
-        setTimeout(() => endTurn(val === 6), 900);
+        if (isLocalMode || playerIdx === localPlayerIdx) {
+          setTimeout(() => endTurn(val === 6), 900);
+        }
         return;
       }
       if (moves.length === 1) {
         showTurnBanner('গুটি নড়ছে... 🚀');
-        setTimeout(() => performMove(moves[0]), 350);
+        if (isLocalMode || playerIdx === localPlayerIdx) {
+          if (!isLocalMode && roomRef) {
+            roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: moves[0], dice: val, ts: Date.now() });
+          } else {
+            setTimeout(() => performMove(moves[0]), 350);
+          }
+        }
         return;
       }
 
-      state.awaitingSelection = true;
-      state.movable = moves;
+      // Multiple legal moves
       showTurnBanner('গুটিতে ট্যাপ করো 🎯');
+      if (isLocalMode || playerIdx === localPlayerIdx) {
+        state.awaitingSelection = true;
+        state.movable = moves;
+      }
       updateUI();
     }
   }, 60);
@@ -752,13 +765,15 @@ function performMove(tokenIdx) {
     }
 
     if (state.finished[state.current] === 4) {
-      pushState();
+      if (isLocalMode || state.current === localPlayerIdx) pushState();
       winShown = true;
       showWin(state.current);
       return;
     }
 
-    endTurn(getExtraTurn);
+    if (isLocalMode || state.current === localPlayerIdx) {
+      endTurn(getExtraTurn);
+    }
   });
 }
 
@@ -768,10 +783,13 @@ function endTurn(extraTurn) {
     state.consecutiveSixes = 0;
   }
   state.dice = null;
+  state.awaitingSelection = false;
+  state.movable = [];
+
   pushState();
   updateUI();
 
-  if (extraTurn && !state.animatingToken) {
+  if (extraTurn) {
     showTurnBanner('আবার তোমার চাল! 🎉');
   }
 }
@@ -799,7 +817,7 @@ function randomRoomCode() {
 
 function pushState() {
   if (isLocalMode || !roomRef) return;
-  roomRef.child('state').update({
+  roomRef.child('state').set({
     tokens: state.tokens,
     finished: state.finished,
     current: state.current,
@@ -823,6 +841,9 @@ function applyRemoteState(data) {
   if (typeof data.current === 'number') state.current = data.current;
   if (typeof data.dice === 'number') state.dice = data.dice;
 
+  state.awaitingSelection = false;
+  state.movable = [];
+
   updateUI();
 
   if (!winShown) {
@@ -832,7 +853,7 @@ function applyRemoteState(data) {
 }
 
 function attachRoomListeners() {
-  // Listen for live state updates
+  // Listen for full state updates
   roomRef.child('state').on('value', snap => {
     const data = snap.val();
     if (!data) return;
@@ -846,7 +867,15 @@ function attachRoomListeners() {
     const data = snap.val();
     if (!data || data.ts <= lastRollTs) return;
     lastRollTs = data.ts;
-    executeDiceRollAnimation();
+    executeDiceRollAnimation(data.playerIdx, data.val);
+  });
+
+  // Listen for move events
+  roomRef.child('move').on('value', snap => {
+    const data = snap.val();
+    if (!data || data.ts <= lastMoveTs) return;
+    lastMoveTs = data.ts;
+    performMove(data.tokenIdx);
   });
 
   // Listen for love emoji reactions
