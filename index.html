@@ -3,17 +3,17 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<meta name="theme-color" content="#1a0612" />
-<title>Love Ludu 💞 — Romantic Ludo King</title>
+<meta name="theme-color" content="#12030a" />
+<title>Love Ludu 💞 — Real Ludo King Multiplayer</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Hind+Siliguri:wght@500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
     --bg-dark: #12030a;
-    --card-bg: rgba(35, 12, 22, 0.85);
+    --card-bg: rgba(32, 10, 20, 0.92);
     --gold: #f3c64f;
-    --gold-glow: rgba(243, 198, 79, 0.4);
+    --gold-glow: rgba(243, 198, 79, 0.45);
     --rose-red: #d92b4b;
     --sapphire-blue: #2365c4;
     --emerald-green: #1ba362;
@@ -46,60 +46,64 @@
     touch-action: manipulation;
   }
 
-  /* App Layout Container */
+  /* App Outer Layout */
   #app {
     display: flex;
     flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
     width: 100%;
+    max-width: 560px;
     height: 100%;
     height: 100dvh;
-    padding-top: var(--sat);
-    padding-bottom: var(--sab);
-    padding-left: var(--sal);
-    padding-right: var(--sar);
+    margin: 0 auto;
+    padding-top: max(8px, var(--sat));
+    padding-bottom: max(8px, var(--sab));
+    padding-left: max(8px, var(--sal));
+    padding-right: max(8px, var(--sar));
     position: relative;
   }
 
-  /* Top & Bottom Player Profile Cards */
+  /* Top & Bottom Player Profile Cards (Ludo King Style) */
   .player-card {
     display: flex;
     align-items: center;
     justify-content: space-between;
+    width: 100%;
     padding: 8px 14px;
-    background: rgba(30, 9, 19, 0.88);
-    backdrop-filter: blur(8px);
-    border: 1.5px solid rgba(243, 198, 79, 0.3);
-    margin: 6px 10px;
-    border-radius: 16px;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4);
-    transition: all 0.25s ease;
+    background: var(--card-bg);
+    backdrop-filter: blur(10px);
+    border: 1.5px solid rgba(243, 198, 79, 0.25);
+    border-radius: 18px;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     z-index: 10;
     flex-shrink: 0;
   }
 
   .player-card.active-turn {
     border-color: var(--gold);
-    box-shadow: 0 0 16px var(--gold-glow);
-    background: linear-gradient(135deg, rgba(65, 18, 40, 0.95), rgba(30, 9, 19, 0.95));
-    transform: scale(1.01);
+    box-shadow: 0 0 20px var(--gold-glow), 0 4px 15px rgba(0, 0, 0, 0.5);
+    background: linear-gradient(135deg, rgba(65, 18, 40, 0.98), rgba(30, 9, 19, 0.98));
+    transform: scale(1.015);
   }
 
-  .player-info {
+  .player-left {
     display: flex;
     align-items: center;
     gap: 10px;
   }
 
   .avatar {
-    width: 42px;
-    height: 42px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
     font-size: 22px;
     border: 2px solid var(--gold);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
     background: #2a0c1a;
     flex-shrink: 0;
   }
@@ -120,22 +124,75 @@
   }
 
   .player-status {
-    font-size: 11px;
+    font-size: 11.5px;
     color: var(--gold);
-    opacity: 0.9;
+    opacity: 0.95;
+    font-weight: 600;
+  }
+
+  .player-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
   }
 
   .home-counter {
     display: flex;
     align-items: center;
     gap: 4px;
-    background: rgba(0, 0, 0, 0.35);
-    padding: 4px 10px;
+    background: rgba(0, 0, 0, 0.4);
+    padding: 5px 12px;
     border-radius: 20px;
     font-weight: 700;
     font-size: 13px;
     color: var(--gold);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  /* Integrated Dice Box (Per Player Card) */
+  .dice-box {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    border: 2px solid var(--gold);
+    background: linear-gradient(135deg, #ffffff, #ffe4ee);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 30px;
+    cursor: pointer;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.9);
+    transition: transform 0.15s, box-shadow 0.15s;
+    position: relative;
+  }
+
+  .dice-box:active {
+    transform: scale(0.9);
+  }
+
+  .dice-box.turn-glow {
+    animation: dicePulse 1.1s infinite alternate;
+  }
+
+  @keyframes dicePulse {
+    0% { box-shadow: 0 0 6px var(--gold), 0 0 14px var(--gold-glow); transform: scale(1); }
+    100% { box-shadow: 0 0 18px var(--gold), 0 0 26px rgba(243, 198, 79, 0.9); transform: scale(1.08); }
+  }
+
+  .dice-box.rolling {
+    animation: diceShake 0.12s infinite alternate;
+  }
+
+  @keyframes diceShake {
+    0% { transform: rotate(-12deg) scale(1.05); }
+    100% { transform: rotate(12deg) scale(1.05); }
+  }
+
+  .dice-box:disabled {
+    opacity: 0.45;
+    animation: none;
+    cursor: not-allowed;
+    filter: grayscale(0.5);
   }
 
   /* Center Game Board Container */
@@ -146,7 +203,7 @@
     justify-content: center;
     position: relative;
     width: 100%;
-    padding: 4px;
+    padding: 2px;
     min-height: 0;
   }
 
@@ -156,28 +213,28 @@
     max-height: 100%;
     aspect-ratio: 1 / 1;
     border-radius: 18px;
-    box-shadow: 0 12px 35px rgba(0, 0, 0, 0.65), 0 0 0 2px rgba(243, 198, 79, 0.4);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.7), 0 0 0 2px rgba(243, 198, 79, 0.4);
     touch-action: none;
   }
 
-  /* Turn Status Banner */
+  /* Turn Status Banner Overlay */
   #turnBanner {
     position: absolute;
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    background: rgba(20, 5, 13, 0.92);
+    background: rgba(18, 4, 12, 0.94);
     backdrop-filter: blur(10px);
     border: 1.5px solid var(--gold);
     color: var(--cream);
-    padding: 8px 20px;
+    padding: 8px 22px;
     border-radius: 30px;
-    font-size: 13.5px;
+    font-size: 14px;
     font-weight: 700;
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.25s, transform 0.25s;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.65);
     z-index: 15;
     white-space: nowrap;
   }
@@ -187,54 +244,10 @@
     transform: translate(-50%, -50%) scale(1.05);
   }
 
-  /* Dice Dock Container (Embedded inside bottom player card or floating) */
-  .dice-area {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .dice-btn {
-    width: 52px;
-    height: 52px;
-    border-radius: 14px;
-    border: 2px solid var(--gold);
-    background: linear-gradient(135deg, #ffffff, #ffe3ec);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 28px;
-    cursor: pointer;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), inset 0 2px 4px rgba(255, 255, 255, 0.8);
-    transition: transform 0.15s, box-shadow 0.15s;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .dice-btn:active {
-    transform: scale(0.92);
-  }
-
-  .dice-btn.turn-glow {
-    animation: dicePulse 1.2s infinite alternate;
-  }
-
-  @keyframes dicePulse {
-    0% { box-shadow: 0 0 6px var(--gold), 0 0 14px var(--gold-glow); transform: scale(1); }
-    100% { box-shadow: 0 0 16px var(--gold), 0 0 24px rgba(243, 198, 79, 0.8); transform: scale(1.08); }
-  }
-
-  .dice-btn:disabled {
-    opacity: 0.5;
-    animation: none;
-    cursor: not-allowed;
-    filter: grayscale(0.6);
-  }
-
   /* Floating Love Dock */
   #loveDock {
     position: absolute;
-    right: 12px;
+    right: 8px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
@@ -248,7 +261,7 @@
     height: 44px;
     border-radius: 50%;
     border: 1.5px solid var(--gold);
-    background: rgba(35, 12, 22, 0.85);
+    background: rgba(35, 12, 22, 0.88);
     backdrop-filter: blur(6px);
     font-size: 20px;
     cursor: pointer;
@@ -261,7 +274,7 @@
 
   .loveBtn:active {
     transform: scale(0.85);
-    background: rgba(217, 43, 75, 0.6);
+    background: rgba(217, 43, 75, 0.7);
   }
 
   /* Falling Emoji Particles */
@@ -301,7 +314,7 @@
     border-radius: 24px;
     padding: 24px 20px;
     width: min(390px, 92vw);
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7), 0 0 0 1.5px var(--gold);
+    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75), 0 0 0 1.5px var(--gold);
     border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
@@ -420,24 +433,27 @@
 <body>
 
 <div id="app">
-  <!-- Top Player Card (Papri / Opponent) -->
+  <!-- Top Player Card (Opponent / Player 1) -->
   <div class="player-card p-blue" id="topPlayerCard">
-    <div class="player-info">
+    <div class="player-left">
       <div class="avatar" id="topAvatar">👸</div>
       <div class="name-box">
         <div class="player-name" id="topName">পাপড়ি</div>
         <div class="player-status" id="topStatus">অপেক্ষায়...</div>
       </div>
     </div>
-    <div class="home-counter" id="topCounter">
-      <span>🏆</span> <span id="topScore">0/4</span>
+    <div class="player-right">
+      <div class="home-counter" id="topCounter">
+        <span>🏆</span> <span id="topScore">0/4</span>
+      </div>
+      <button class="dice-box" id="topDiceBtn" disabled>🎲</button>
     </div>
   </div>
 
   <!-- Central Canvas Game Board Wrapper -->
   <div id="board-wrapper">
     <canvas id="luduCanvas" width="900" height="900"></canvas>
-    <div id="turnBanner">তোমার পালা 🎯</div>
+    <div id="turnBanner">তোমার চাল 🎯</div>
 
     <!-- Floating Love Action Bar -->
     <div id="loveDock" style="display:none;">
@@ -448,21 +464,20 @@
     </div>
   </div>
 
-  <!-- Bottom Player Card (Tumi / You) -->
+  <!-- Bottom Player Card (You / Player 0) -->
   <div class="player-card p-red" id="bottomPlayerCard">
-    <div class="player-info">
+    <div class="player-left">
       <div class="avatar" id="bottomAvatar">🤵</div>
       <div class="name-box">
         <div class="player-name" id="bottomName">তুমি</div>
         <div class="player-status" id="bottomStatus">তোমার চাল</div>
       </div>
     </div>
-    
-    <div class="dice-area">
+    <div class="player-right">
       <div class="home-counter" id="bottomCounter">
         <span>🏆</span> <span id="bottomScore">0/4</span>
       </div>
-      <button class="diceBtn dice-btn" id="diceBtn" disabled>🎲</button>
+      <button class="dice-box" id="bottomDiceBtn" disabled>🎲</button>
     </div>
   </div>
 </div>
@@ -501,7 +516,7 @@
     <h2>রুম রেডি 🎀</h2>
     <p class="sub">এই কোডটা পাপড়িকে পাঠাও। কোডে চাপ দিলে কপি হবে!</p>
     <div id="roomCodeDisplay">------</div>
-    <p class="sub" id="waitStatus">⏳ পাপড়ির জয়েন করার অপেক্ষায়...</p>
+    <p class="sub" id="waitStatus">⏳ জয়েন করার অপেক্ষায়...</p>
   </div>
 </div>
 

@@ -1,7 +1,5 @@
 /* ============================================================
-   LOVE LUDU 💞 — 2D Romantic Ludo Engine (Ludo King Style)
-   Optimized for mobile fit (iOS Safari & Android), smooth 60fps canvas,
-   hopping pawn animations, local & online multiplayer.
+   LOVE LUDU 💞 — Real Ludo King Engine with Synchronized Dice & Turns
    ============================================================ */
 
 const canvas = document.getElementById('luduCanvas');
@@ -26,6 +24,8 @@ const PALETTE = {
   ink: '#2b101d',
   yardWhite: '#ffffff',
 };
+
+const DICE_EMOJIS = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
 
 // ------------------------------------------------------------
 // 1. OFFICIAL 52-CELL LUDO RING & HOME PATHS
@@ -93,9 +93,10 @@ const PLAYERS = [
 // 2. GAME STATE
 // ------------------------------------------------------------
 const state = {
-  current: 0,             // 0: Tumi (Red), 1: Papri (Blue)
+  current: 0,             // 0: Red/Tumi, 1: Blue/Papri
   dice: null,
   rolling: false,
+  consecutiveSixes: 0,
   awaitingSelection: false,
   movable: [],
   tokens: [
@@ -107,10 +108,11 @@ const state = {
 };
 
 let isLocalMode = false;
-let localPlayerIdx = 0; // 0 for host/local, 1 for joined guest
+let localPlayerIdx = 0; // 0 for host/p1, 1 for guest/p2
 let roomCode = null;
 let roomRef = null;
-let lastDiceTs = 0;
+let lastRollTs = 0;
+let lastStateTs = 0;
 let lastLoveTs = 0;
 let winShown = false;
 
@@ -121,7 +123,7 @@ let cellSize = 60;
 
 function resizeCanvas() {
   const container = document.getElementById('board-wrapper');
-  const size = Math.min(container.clientWidth - 8, container.clientHeight - 8);
+  const size = Math.min(container.clientWidth - 4, container.clientHeight - 4);
   const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
   canvas.width = Math.floor(size * dpr);
   canvas.height = Math.floor(size * dpr);
@@ -155,7 +157,7 @@ function getTokenCell(playerIdx, tokenIdx) {
     const homeIdx = t.progress - RING_LEN - 1;
     return p.homeStretch[homeIdx];
   }
-  return p.homeTarget; // Finished in home center
+  return p.homeTarget;
 }
 
 // ------------------------------------------------------------
@@ -189,19 +191,17 @@ function drawStar(cx, cy, spikes, outerRadius, innerRadius, color) {
   ctx.stroke();
 }
 
-function drawYard(r0, c0, color, isHeart = false) {
+function drawYard(r0, c0, color) {
   const x = c0 * cellSize;
   const y = r0 * cellSize;
   const w = 6 * cellSize;
 
-  // Background Yard
   ctx.fillStyle = color;
   ctx.fillRect(x, y, w, w);
   ctx.strokeStyle = PALETTE.ink;
   ctx.lineWidth = Math.max(2, cellSize * 0.06);
   ctx.strokeRect(x, y, w, w);
 
-  // Inner White Box
   const margin = 0.9 * cellSize;
   const innerW = 4.2 * cellSize;
   ctx.fillStyle = PALETTE.yardWhite;
@@ -211,7 +211,6 @@ function drawYard(r0, c0, color, isHeart = false) {
   ctx.lineWidth = Math.max(2, cellSize * 0.06);
   ctx.stroke();
 
-  // 4 Token circles in Yard
   const centers = [
     { r: r0 + 1.9, c: c0 + 1.9 },
     { r: r0 + 1.9, c: c0 + 4.1 },
@@ -234,73 +233,42 @@ function drawYard(r0, c0, color, isHeart = false) {
 }
 
 function drawBoard() {
-  // 1. Board Background
   ctx.fillStyle = PALETTE.boardBg;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  // 2. Main 15x15 Grid Lines
   ctx.strokeStyle = PALETTE.gridLine;
   ctx.lineWidth = Math.max(1, cellSize * 0.03);
   for (let i = 0; i <= GRID; i++) {
-    ctx.beginPath();
-    ctx.moveTo(i * cellSize, 0);
-    ctx.lineTo(i * cellSize, canvas.height);
-    ctx.stroke();
-
-    ctx.beginPath();
-    ctx.moveTo(0, i * cellSize);
-    ctx.lineTo(canvas.width, i * cellSize);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(i * cellSize, 0); ctx.lineTo(i * cellSize, canvas.height); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i * cellSize); ctx.lineTo(canvas.width, i * cellSize); ctx.stroke();
   }
 
-  // 3. Four Corner Yards
   drawYard(0, 0, PALETTE.red);
   drawYard(0, 9, PALETTE.green);
   drawYard(9, 9, PALETTE.blue);
   drawYard(9, 0, PALETTE.yellow);
 
-  // 4. Colored Home Tracks
-  // Red Home Track (row 7, cols 1..5)
-  for (let c = 1; c <= 5; c++) {
-    ctx.fillStyle = PALETTE.red;
-    ctx.fillRect(c * cellSize, 7 * cellSize, cellSize, cellSize);
-  }
-  // Red Starting Cell (row 6, col 1)
-  ctx.fillStyle = PALETTE.red;
-  ctx.fillRect(1 * cellSize, 6 * cellSize, cellSize, cellSize);
+  // Red Home Track
+  for (let c = 1; c <= 5; c++) { ctx.fillStyle = PALETTE.red; ctx.fillRect(c * cellSize, 7 * cellSize, cellSize, cellSize); }
+  ctx.fillStyle = PALETTE.red; ctx.fillRect(1 * cellSize, 6 * cellSize, cellSize, cellSize);
 
-  // Green Home Track (col 7, rows 1..5)
-  for (let r = 1; r <= 5; r++) {
-    ctx.fillStyle = PALETTE.green;
-    ctx.fillRect(7 * cellSize, r * cellSize, cellSize, cellSize);
-  }
-  // Green Starting Cell (row 1, col 8)
-  ctx.fillStyle = PALETTE.green;
-  ctx.fillRect(8 * cellSize, 1 * cellSize, cellSize, cellSize);
+  // Green Home Track
+  for (let r = 1; r <= 5; r++) { ctx.fillStyle = PALETTE.green; ctx.fillRect(7 * cellSize, r * cellSize, cellSize, cellSize); }
+  ctx.fillStyle = PALETTE.green; ctx.fillRect(8 * cellSize, 1 * cellSize, cellSize, cellSize);
 
-  // Blue Home Track (row 7, cols 9..13)
-  for (let c = 9; c <= 13; c++) {
-    ctx.fillStyle = PALETTE.blue;
-    ctx.fillRect(c * cellSize, 7 * cellSize, cellSize, cellSize);
-  }
-  // Blue Starting Cell (row 8, col 13)
-  ctx.fillStyle = PALETTE.blue;
-  ctx.fillRect(13 * cellSize, 8 * cellSize, cellSize, cellSize);
+  // Blue Home Track
+  for (let c = 9; c <= 13; c++) { ctx.fillStyle = PALETTE.blue; ctx.fillRect(c * cellSize, 7 * cellSize, cellSize, cellSize); }
+  ctx.fillStyle = PALETTE.blue; ctx.fillRect(13 * cellSize, 8 * cellSize, cellSize, cellSize);
 
-  // Yellow Home Track (col 7, rows 9..13)
-  for (let r = 9; r <= 13; r++) {
-    ctx.fillStyle = PALETTE.yellow;
-    ctx.fillRect(7 * cellSize, r * cellSize, cellSize, cellSize);
-  }
-  // Yellow Starting Cell (row 13, col 6)
-  ctx.fillStyle = PALETTE.yellow;
-  ctx.fillRect(6 * cellSize, 13 * cellSize, cellSize, cellSize);
+  // Yellow Home Track
+  for (let r = 9; r <= 13; r++) { ctx.fillStyle = PALETTE.yellow; ctx.fillRect(7 * cellSize, r * cellSize, cellSize, cellSize); }
+  ctx.fillStyle = PALETTE.yellow; ctx.fillRect(6 * cellSize, 13 * cellSize, cellSize, cellSize);
 
-  // Redraw cell borders over tracks
+  // Re-stroke grid lines
   ctx.strokeStyle = PALETTE.gridLine;
   ctx.lineWidth = Math.max(1, cellSize * 0.03);
 
-  // 5. Star Safe Spots
+  // Safe Stars
   const stars = [
     { r: 6, c: 1 }, { r: 2, c: 6 }, { r: 1, c: 8 }, { r: 6, c: 12 },
     { r: 8, c: 13 }, { r: 12, c: 8 }, { r: 13, c: 6 }, { r: 8, c: 2 }
@@ -310,35 +278,20 @@ function drawBoard() {
     drawStar(coords.cx, coords.cy, 5, cellSize * 0.32, cellSize * 0.14, PALETTE.star);
   });
 
-  // 6. Center 4-Triangle Victory Home
-  const cX = 7.5 * cellSize;
-  const cY = 7.5 * cellSize;
+  // Center 4 Triangles
+  const cX = 7.5 * cellSize, cY = 7.5 * cellSize;
   const leftX = 6 * cellSize, rightX = 9 * cellSize;
   const topY = 6 * cellSize, bottomY = 9 * cellSize;
 
-  // Left Triangle (Red)
-  ctx.fillStyle = PALETTE.red;
-  ctx.beginPath(); ctx.moveTo(leftX, topY); ctx.lineTo(cX, cY); ctx.lineTo(leftX, bottomY); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = PALETTE.red; ctx.beginPath(); ctx.moveTo(leftX, topY); ctx.lineTo(cX, cY); ctx.lineTo(leftX, bottomY); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = PALETTE.green; ctx.beginPath(); ctx.moveTo(leftX, topY); ctx.lineTo(cX, cY); ctx.lineTo(rightX, topY); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = PALETTE.blue; ctx.beginPath(); ctx.moveTo(rightX, topY); ctx.lineTo(cX, cY); ctx.lineTo(rightX, bottomY); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = PALETTE.yellow; ctx.beginPath(); ctx.moveTo(leftX, bottomY); ctx.lineTo(cX, cY); ctx.lineTo(rightX, bottomY); ctx.closePath(); ctx.fill();
 
-  // Top Triangle (Green)
-  ctx.fillStyle = PALETTE.green;
-  ctx.beginPath(); ctx.moveTo(leftX, topY); ctx.lineTo(cX, cY); ctx.lineTo(rightX, topY); ctx.closePath(); ctx.fill();
-
-  // Right Triangle (Blue)
-  ctx.fillStyle = PALETTE.blue;
-  ctx.beginPath(); ctx.moveTo(rightX, topY); ctx.lineTo(cX, cY); ctx.lineTo(rightX, bottomY); ctx.closePath(); ctx.fill();
-
-  // Bottom Triangle (Yellow)
-  ctx.fillStyle = PALETTE.yellow;
-  ctx.beginPath(); ctx.moveTo(leftX, bottomY); ctx.lineTo(cX, cY); ctx.lineTo(rightX, bottomY); ctx.closePath(); ctx.fill();
-
-  // Center Heart Emblem
   ctx.font = `${cellSize * 0.8}px serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('💖', cX, cY);
 
-  // Border around 3x3 center
   ctx.strokeStyle = PALETTE.gold;
   ctx.lineWidth = Math.max(2, cellSize * 0.06);
   ctx.strokeRect(6 * cellSize, 6 * cellSize, 3 * cellSize, 3 * cellSize);
@@ -369,11 +322,9 @@ function drawPawn(cx, cy, color, isHighlight = false, bounceOffset = 0, scale = 
     ctx.lineWidth = Math.max(2, cellSize * 0.06);
     ctx.stroke();
 
-    // Floating Arrow Pointer
     const arrowY = py - rad * 1.8;
     ctx.font = `${cellSize * 0.6}px sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText('👇', cx, arrowY);
   }
 
@@ -383,7 +334,7 @@ function drawPawn(cx, cy, color, isHighlight = false, bounceOffset = 0, scale = 
   ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
   ctx.fill();
 
-  // Pawn Body / Sphere
+  // Sphere Head
   const gradient = ctx.createRadialGradient(cx - rad * 0.3, py - rad * 0.3, rad * 0.1, cx, py, rad);
   gradient.addColorStop(0, '#ffffff');
   gradient.addColorStop(0.3, color);
@@ -397,26 +348,22 @@ function drawPawn(cx, cy, color, isHighlight = false, bounceOffset = 0, scale = 
   ctx.lineWidth = Math.max(1.5, cellSize * 0.04);
   ctx.stroke();
 
-  // Inner Heart Emblem
   ctx.font = `${rad * 0.9}px sans-serif`;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   ctx.fillText('💗', cx, py);
 
   ctx.restore();
 }
 
 function drawAllTokens() {
-  // Group tokens by cell position for stacking
   const cellOccupants = {};
 
   PLAYERS.forEach((p, pi) => {
     state.tokens[pi].forEach((t, ti) => {
-      // Check if token is currently animating
       if (state.animatingToken && state.animatingToken.playerIdx === pi && state.animatingToken.tokenIdx === ti) {
-        return; // Render animating token separately
+        return;
       }
-      if (t.progress === FINISH) return; // Hide finished tokens in center
+      if (t.progress === FINISH) return;
 
       const cell = getTokenCell(pi, ti);
       const key = `${cell.r},${cell.c}`;
@@ -425,7 +372,6 @@ function drawAllTokens() {
     });
   });
 
-  // Render static stacked tokens
   Object.keys(cellOccupants).forEach(key => {
     const tokensOnCell = cellOccupants[key];
     const [r, c] = key.split(',').map(Number);
@@ -435,7 +381,7 @@ function drawAllTokens() {
     tokensOnCell.forEach((item, idx) => {
       const { pi, ti } = item;
       const p = PLAYERS[pi];
-      const isMovable = (state.awaitingSelection && state.current === localPlayerIdx && pi === state.current && state.movable.includes(ti));
+      const isMovable = (state.awaitingSelection && (isLocalMode || state.current === localPlayerIdx) && pi === state.current && state.movable.includes(ti));
 
       let px = coords.cx;
       let py = coords.cy;
@@ -459,7 +405,6 @@ function drawAllTokens() {
     });
   });
 
-  // Render Animating Token if active
   if (state.animatingToken) {
     const anim = state.animatingToken;
     const p = PLAYERS[anim.playerIdx];
@@ -488,16 +433,14 @@ function gameLoop(timestamp) {
   const dt = timestamp - lastTimestamp;
   lastTimestamp = timestamp;
 
-  // Handle Hopping Pawn Animation Step
   if (state.animatingToken) {
     const anim = state.animatingToken;
-    anim.t += dt / 110; // ~110ms per step hop
+    anim.t += dt / 110;
 
     if (anim.t >= 1) {
       anim.t = 0;
       anim.currentStep++;
       if (anim.currentStep >= anim.path.length - 1) {
-        // Animation finished
         const cb = anim.onComplete;
         state.animatingToken = null;
         if (cb) cb();
@@ -505,7 +448,6 @@ function gameLoop(timestamp) {
     }
   }
 
-  // Clear & Draw Frame
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   drawBoard();
   drawAllTokens();
@@ -560,7 +502,6 @@ function applyMove(playerIdx, tokenIdx, dice, onDone) {
   const t = state.tokens[playerIdx][tokenIdx];
   const path = getMovePath(playerIdx, tokenIdx, dice);
 
-  // Trigger step-by-step hopping animation
   state.animatingToken = {
     playerIdx,
     tokenIdx,
@@ -572,25 +513,26 @@ function applyMove(playerIdx, tokenIdx, dice, onDone) {
       else t.progress += dice;
 
       let captured = false;
-      // Check capture logic on non-safe ring cells
+      let reachedHome = (t.progress === FINISH);
+
       if (t.progress >= 1 && t.progress <= RING_LEN) {
         const ringIdx = ringIndexOfProgress(playerIdx, t.progress);
         if (!SAFE_RING_INDICES.has(ringIdx)) {
           const opp = 1 - playerIdx;
           state.tokens[opp].forEach(ot => {
             if (ot.progress >= 1 && ot.progress <= RING_LEN && ringIndexOfProgress(opp, ot.progress) === ringIdx) {
-              ot.progress = 0; // Send opponent pawn back to yard!
+              ot.progress = 0;
               captured = true;
             }
           });
         }
       }
 
-      if (t.progress === FINISH) {
+      if (reachedHome) {
         state.finished[playerIdx]++;
       }
 
-      onDone(captured);
+      onDone({ captured, reachedHome });
     }
   };
 }
@@ -609,7 +551,6 @@ canvas.addEventListener('pointerdown', e => {
   const tapX = (e.clientX - rect.left) * scaleX;
   const tapY = (e.clientY - rect.top) * scaleY;
 
-  // Find if user tapped one of their legal movable tokens
   const movableTokens = state.movable;
   for (const tokenIdx of movableTokens) {
     const cell = getTokenCell(state.current, tokenIdx);
@@ -624,44 +565,96 @@ canvas.addEventListener('pointerdown', e => {
 });
 
 // ------------------------------------------------------------
-// 9. UI CONTROLS & TURN MANAGEMENT
+// 9. UI & PER-PLAYER DICE CONTROLS
 // ------------------------------------------------------------
-const diceBtn = document.getElementById('diceBtn');
 const topCard = document.getElementById('topPlayerCard');
 const bottomCard = document.getElementById('bottomPlayerCard');
-const topScore = document.getElementById('topScore');
-const bottomScore = document.getElementById('bottomScore');
 const topName = document.getElementById('topName');
 const bottomName = document.getElementById('bottomName');
+const topStatus = document.getElementById('topStatus');
+const bottomStatus = document.getElementById('bottomStatus');
+const topScore = document.getElementById('topScore');
+const bottomScore = document.getElementById('bottomScore');
+const topDiceBtn = document.getElementById('topDiceBtn');
+const bottomDiceBtn = document.getElementById('bottomDiceBtn');
 const turnBanner = document.getElementById('turnBanner');
 
-function updateUI() {
-  // Update scores
-  topScore.textContent = `${state.finished[1]}/4`;
-  bottomScore.textContent = `${state.finished[0]}/4`;
-
-  // Turn Highlights
-  const isMyTurn = isLocalMode ? true : (state.current === localPlayerIdx);
-  const activePlayer = PLAYERS[state.current];
-
-  if (state.current === 0) {
-    bottomCard.classList.add('active-turn');
-    topCard.classList.remove('active-turn');
+function getPerspectivePlayerIdx(cardLocation) {
+  // 'bottom' is ALWAYS local player (or player 0 in local mode)
+  // 'top' is ALWAYS opponent (or player 1 in local mode)
+  if (cardLocation === 'bottom') {
+    return isLocalMode ? state.current : localPlayerIdx;
   } else {
-    topCard.classList.add('active-turn');
-    bottomCard.classList.remove('active-turn');
+    return isLocalMode ? (1 - state.current) : (1 - localPlayerIdx);
+  }
+}
+
+function updateUI() {
+  // Player 0 = Red, Player 1 = Blue
+  const hostName = PLAYERS[0].name;
+  const guestName = PLAYERS[1].name;
+
+  if (isLocalMode || localPlayerIdx === 0) {
+    bottomName.textContent = hostName;
+    topName.textContent = guestName;
+    bottomScore.textContent = `${state.finished[0]}/4`;
+    topScore.textContent = `${state.finished[1]}/4`;
+  } else {
+    // Guest perspective: Guest (P1) is at bottom!
+    bottomName.textContent = guestName;
+    topName.textContent = hostName;
+    bottomScore.textContent = `${state.finished[1]}/4`;
+    topScore.textContent = `${state.finished[0]}/4`;
   }
 
-  // Dice Button State
+  const activeIdx = state.current;
+  const activePlayer = PLAYERS[activeIdx];
+  const isMyTurn = isLocalMode ? true : (activeIdx === localPlayerIdx);
+
+  // Card Glow & Status
+  if (isLocalMode) {
+    if (activeIdx === 0) {
+      bottomCard.classList.add('active-turn'); topCard.classList.remove('active-turn');
+      bottomStatus.textContent = 'তোমার চাল'; topStatus.textContent = 'অপেক্ষায়...';
+    } else {
+      topCard.classList.add('active-turn'); bottomCard.classList.remove('active-turn');
+      topStatus.textContent = 'পাপড়ির চাল'; bottomStatus.textContent = 'অপেক্ষায়...';
+    }
+  } else {
+    if (activeIdx === localPlayerIdx) {
+      bottomCard.classList.add('active-turn'); topCard.classList.remove('active-turn');
+      bottomStatus.textContent = 'তোমার চাল 🎯'; topStatus.textContent = 'অপেক্ষায়...';
+    } else {
+      topCard.classList.add('active-turn'); bottomCard.classList.remove('active-turn');
+      topStatus.textContent = `${activePlayer.name}-এর চাল 🎲`; bottomStatus.textContent = 'অপেক্ষায়...';
+    }
+  }
+
+  // Dice buttons setup
+  const myDiceBtn = bottomDiceBtn;
+  const oppDiceBtn = topDiceBtn;
+
   const canRoll = isMyTurn && !state.rolling && !state.awaitingSelection && !state.animatingToken;
-  diceBtn.disabled = !canRoll;
+  myDiceBtn.disabled = !canRoll;
+  oppDiceBtn.disabled = true;
 
   if (canRoll) {
-    diceBtn.classList.add('turn-glow');
+    myDiceBtn.classList.add('turn-glow');
     showTurnBanner(isLocalMode ? `${activePlayer.name}-এর চাল 🎯` : 'তোমার চাল! ডাইস চাপো 🎯');
   } else {
-    diceBtn.classList.remove('turn-glow');
-    showTurnBanner(`${activePlayer.name}-এর চাল... 🎲`);
+    myDiceBtn.classList.remove('turn-glow');
+    if (!state.rolling && !state.awaitingSelection) {
+      showTurnBanner(`${activePlayer.name}-এর চাল... 🎲`);
+    }
+  }
+
+  if (state.dice && !state.rolling) {
+    const diceChar = DICE_EMOJIS[state.dice - 1] || '🎲';
+    if (activeIdx === (isLocalMode ? 0 : localPlayerIdx)) {
+      myDiceBtn.textContent = diceChar;
+    } else {
+      oppDiceBtn.textContent = diceChar;
+    }
   }
 }
 
@@ -671,30 +664,58 @@ function showTurnBanner(text) {
   setTimeout(() => turnBanner.classList.remove('show'), 2200);
 }
 
-// Dice Roll Logic
-diceBtn.addEventListener('click', () => {
+// Trigger Dice Roll
+function startDiceRoll() {
   if (state.rolling || state.awaitingSelection || state.animatingToken) return;
   if (!isLocalMode && state.current !== localPlayerIdx) return;
 
-  state.rolling = true;
-  diceBtn.disabled = true;
+  if (!isLocalMode && roomRef) {
+    // Broadcast roll event to remote player
+    roomRef.child('roll').set({ playerIdx: state.current, ts: Date.now() });
+  } else {
+    executeDiceRollAnimation();
+  }
+}
 
-  // Dice Tumble Animation
+bottomDiceBtn.addEventListener('click', startDiceRoll);
+
+function executeDiceRollAnimation() {
+  state.rolling = true;
+  const activeIdx = state.current;
+  const activeDiceBtn = (activeIdx === (isLocalMode ? 0 : localPlayerIdx)) ? bottomDiceBtn : topDiceBtn;
+
+  activeDiceBtn.classList.add('rolling');
+
   let rolls = 0;
-  const diceEmojis = ['⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
   const interval = setInterval(() => {
-    diceBtn.textContent = diceEmojis[Math.floor(Math.random() * 6)];
+    activeDiceBtn.textContent = DICE_EMOJIS[Math.floor(Math.random() * 6)];
     rolls++;
     if (rolls >= 10) {
       clearInterval(interval);
+      activeDiceBtn.classList.remove('rolling');
+
       const val = 1 + Math.floor(Math.random() * 6);
       state.dice = val;
       state.rolling = false;
-      diceBtn.textContent = diceEmojis[val - 1];
+      activeDiceBtn.textContent = DICE_EMOJIS[val - 1];
+
+      if (val === 6) {
+        state.consecutiveSixes++;
+      } else {
+        state.consecutiveSixes = 0;
+      }
 
       pushState();
 
-      const moves = legalMoves(state.current, val);
+      // Check 3 consecutive 6s penalty
+      if (state.consecutiveSixes >= 3) {
+        showTurnBanner('পর পর ৩টি ৬! চাল বাতিল ⚠️');
+        state.consecutiveSixes = 0;
+        setTimeout(() => endTurn(false), 1200);
+        return;
+      }
+
+      const moves = legalMoves(activeIdx, val);
       if (moves.length === 0) {
         showTurnBanner('কোনো চাল নেই... 😢');
         setTimeout(() => endTurn(val === 6), 900);
@@ -702,7 +723,7 @@ diceBtn.addEventListener('click', () => {
       }
       if (moves.length === 1) {
         showTurnBanner('গুটি নড়ছে... 🚀');
-        setTimeout(() => performMove(moves[0]), 300);
+        setTimeout(() => performMove(moves[0]), 350);
         return;
       }
 
@@ -712,17 +733,22 @@ diceBtn.addEventListener('click', () => {
       updateUI();
     }
   }, 60);
-});
+}
 
 function performMove(tokenIdx) {
   state.awaitingSelection = false;
   state.movable = [];
   const dice = state.dice;
 
-  applyMove(state.current, tokenIdx, dice, captured => {
+  applyMove(state.current, tokenIdx, dice, ({ captured, reachedHome }) => {
+    let getExtraTurn = (dice === 6) || captured || reachedHome;
+
     if (captured) {
-      showTurnBanner('💥 কাটা পড়েছে!');
+      showTurnBanner('💥 কাটা পড়েছে! আবার চাল 🎉');
       rainEmojis(['😲', '🔥', '💥'], 8);
+    } else if (reachedHome) {
+      showTurnBanner('🏆 ১টি গুটি হোমে পৌঁছাল! আবার চাল 🎉');
+      rainEmojis(['🏆', '✨', '💖'], 10);
     }
 
     if (state.finished[state.current] === 4) {
@@ -732,20 +758,21 @@ function performMove(tokenIdx) {
       return;
     }
 
-    endTurn(dice === 6);
+    endTurn(getExtraTurn);
   });
 }
 
 function endTurn(extraTurn) {
   if (!extraTurn) {
     state.current = 1 - state.current;
+    state.consecutiveSixes = 0;
   }
   state.dice = null;
   pushState();
   updateUI();
 
-  if (extraTurn) {
-    showTurnBanner('৬ পড়েছে! আবার চাল দাও 🎉');
+  if (extraTurn && !state.animatingToken) {
+    showTurnBanner('আবার তোমার চাল! 🎉');
   }
 }
 
@@ -761,7 +788,7 @@ function showWin(playerIdx) {
 document.getElementById('playAgainBtn').addEventListener('click', () => window.location.reload());
 
 // ------------------------------------------------------------
-// 10. MULTIPLAYER — FIREBASE & LOCAL PASS & PLAY
+// 10. MULTIPLAYER — FIREBASE REALTIME DATABASE SYNC
 // ------------------------------------------------------------
 function randomRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -777,7 +804,7 @@ function pushState() {
     finished: state.finished,
     current: state.current,
     dice: state.dice,
-    diceTs: Date.now()
+    ts: Date.now()
   });
 }
 
@@ -794,6 +821,8 @@ function applyRemoteState(data) {
   if (Array.isArray(data.tokens)) state.tokens = data.tokens;
   if (Array.isArray(data.finished)) state.finished = data.finished;
   if (typeof data.current === 'number') state.current = data.current;
+  if (typeof data.dice === 'number') state.dice = data.dice;
+
   updateUI();
 
   if (!winShown) {
@@ -803,8 +832,24 @@ function applyRemoteState(data) {
 }
 
 function attachRoomListeners() {
-  roomRef.child('state').on('value', snap => applyRemoteState(snap.val()));
+  // Listen for live state updates
+  roomRef.child('state').on('value', snap => {
+    const data = snap.val();
+    if (!data) return;
+    if (data.ts && data.ts <= lastStateTs) return;
+    lastStateTs = data.ts;
+    applyRemoteState(data);
+  });
 
+  // Listen for roll events
+  roomRef.child('roll').on('value', snap => {
+    const data = snap.val();
+    if (!data || data.ts <= lastRollTs) return;
+    lastRollTs = data.ts;
+    executeDiceRollAnimation();
+  });
+
+  // Listen for love emoji reactions
   roomRef.child('love').on('value', snap => {
     const d = snap.val();
     if (!d || d.ts === lastLoveTs) return;
@@ -812,15 +857,16 @@ function attachRoomListeners() {
     rainEmojis([EMOJI[d.type]], 22);
   });
 
+  // Listen for players joining
   roomRef.child('players').on('value', snap => {
     const d = snap.val() || {};
-    if (d.p1) { PLAYERS[0].name = d.p1; bottomName.textContent = d.p1; }
-    if (d.p2) { PLAYERS[1].name = d.p2; topName.textContent = d.p2; }
+    if (d.p1) PLAYERS[0].name = d.p1;
+    if (d.p2) PLAYERS[1].name = d.p2;
 
     if (d.p1 && d.p2) {
       enterGameScreen();
     } else if (localPlayerIdx === 0) {
-      document.getElementById('waitStatus').textContent = `⏳ ${d.p1} রুম বানিয়েছে, পাপড়ির জয়েন করার অপেক্ষায়...`;
+      document.getElementById('waitStatus').textContent = `⏳ ${d.p1} রুম বানিয়েছে, সঙ্গীর জয়েন করার অপেক্ষায়...`;
     }
   });
 }
@@ -850,7 +896,7 @@ document.getElementById('createRoomBtn').addEventListener('click', () => {
   roomRef = db.ref('rooms/' + roomCode);
   roomRef.set({
     players: { p1: name },
-    state: { tokens: state.tokens, finished: [0, 0], current: 0, dice: null, diceTs: 0 }
+    state: { tokens: state.tokens, finished: [0, 0], current: 0, dice: null, ts: Date.now() }
   }).then(() => {
     document.getElementById('lobbyChoose').style.display = 'none';
     document.getElementById('lobbyWait').style.display = 'block';
@@ -864,7 +910,7 @@ document.getElementById('createRoomBtn').addEventListener('click', () => {
 
     attachRoomListeners();
   }).catch(err => {
-    document.getElementById('lobbyError').textContent = 'রুম বানাতে সমস্যা হয়েছে।';
+    document.getElementById('lobbyError').textContent = 'রুম বানাতে সমস্যা হয়েছে — Firebase config চেক করো।';
     console.error(err);
   });
 });
@@ -894,10 +940,6 @@ document.getElementById('joinRoomBtn').addEventListener('click', () => {
     roomRef = ref;
 
     PLAYERS[1].name = name;
-    // For guest (Player 1), Swap top and bottom cards so Guest is always at bottom!
-    topName.textContent = snap.val().players.p1 || 'তুমি';
-    bottomName.textContent = name;
-
     return roomRef.child('players/p2').set(name).then(() => {
       attachRoomListeners();
     });
@@ -912,8 +954,6 @@ document.getElementById('passPlayBtn').addEventListener('click', () => {
   isLocalMode = true;
   PLAYERS[0].name = document.getElementById('myName').value.trim() || 'তুমি';
   PLAYERS[1].name = 'পাপড়ি';
-  bottomName.textContent = PLAYERS[0].name;
-  topName.textContent = PLAYERS[1].name;
   enterGameScreen();
 });
 
