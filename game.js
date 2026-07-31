@@ -433,7 +433,8 @@ function drawAllTokens() {
 let lastTimestamp = 0;
 
 function gameLoop(timestamp) {
-  const dt = timestamp - lastTimestamp;
+  if (!lastTimestamp) lastTimestamp = timestamp;
+  const dt = Math.min(Math.max(0, timestamp - lastTimestamp), 100);
   lastTimestamp = timestamp;
 
   if (state.animatingToken) {
@@ -524,6 +525,7 @@ function applyMove(playerIdx, tokenIdx, dice, onDone) {
     currentStep: 0,
     t: 0,
     onComplete: () => {
+      clearTimeout(window._animSafetyTimer);
       if (currentProg === 0) {
         t.progress = 1;
       } else {
@@ -553,6 +555,17 @@ function applyMove(playerIdx, tokenIdx, dice, onDone) {
       onDone({ captured, reachedHome });
     }
   };
+
+  // Safety Timeout: Force complete animation if it hangs for >3.5s
+  clearTimeout(window._animSafetyTimer);
+  window._animSafetyTimer = setTimeout(() => {
+    if (state.animatingToken) {
+      console.warn('Animation safety timeout forced completion');
+      const cb = state.animatingToken.onComplete;
+      state.animatingToken = null;
+      if (cb) cb();
+    }
+  }, 3500);
 }
 
 // ------------------------------------------------------------
@@ -586,18 +599,21 @@ canvas.addEventListener('pointerdown', e => {
 
   if (clickedTokenIdx !== -1) {
     const dice = state.dice || 1;
+    const player = state.current;
+    state.awaitingSelection = false;
+    state.movable = [];
+    const ts = Date.now();
+    lastMoveTs = ts;
+
     if (!isLocalMode && roomRef) {
-      // In Online Mode, send move to Firebase; ref('move') listener will trigger performMove
       roomRef.child('move').set({
-        playerIdx: state.current,
+        playerIdx: player,
         tokenIdx: clickedTokenIdx,
         dice: dice,
-        ts: Date.now()
+        ts: ts
       }).catch(err => console.warn('Firebase move push error:', err));
-    } else {
-      // In Local Mode, perform move directly
-      performMove(clickedTokenIdx, dice);
     }
+    performMove(clickedTokenIdx, dice, player);
   }
 });
 
@@ -718,16 +734,21 @@ function handleDiceClick(clickedPlayerIdx) {
   if (state.awaitingSelection && state.movable.length > 0) {
     const tokenIdx = state.movable[0];
     const dice = state.dice || 1;
+    const player = state.current;
+    state.awaitingSelection = false;
+    state.movable = [];
+    const ts = Date.now();
+    lastMoveTs = ts;
+
     if (!isLocalMode && roomRef) {
       roomRef.child('move').set({
-        playerIdx: state.current,
+        playerIdx: player,
         tokenIdx: tokenIdx,
         dice: dice,
-        ts: Date.now()
+        ts: ts
       }).catch(err => console.warn('Firebase move push error:', err));
-    } else {
-      performMove(tokenIdx, dice);
     }
+    performMove(tokenIdx, dice, player);
     return;
   }
 
@@ -826,12 +847,18 @@ function executeDiceRollAnimation(playerIdx, val) {
       if (moves.length === 1 || allInYard) {
         showTurnBanner(allInYard ? 'গুটি বের হচ্ছে... 🚀' : 'গুটি নড়ছে... 🚀');
         const chosenToken = moves[0];
+        state.awaitingSelection = false;
+        state.movable = [];
+        const ts = Date.now();
+
         if (!isLocalMode && roomRef) {
           if (playerIdx === localPlayerIdx) {
-            roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: chosenToken, dice: val, ts: Date.now() }).catch(err => console.warn(err));
+            lastMoveTs = ts;
+            roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: chosenToken, dice: val, ts: ts }).catch(err => console.warn(err));
+            setTimeout(() => performMove(chosenToken, val, playerIdx), 300);
           }
         } else {
-          setTimeout(() => performMove(chosenToken, val), 300);
+          setTimeout(() => performMove(chosenToken, val, playerIdx), 300);
         }
         return;
       }
