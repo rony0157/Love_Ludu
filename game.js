@@ -1,5 +1,5 @@
 /* ============================================================
-   LOVE LUDU 💞 — Real Ludo King Engine (Synchronized & Bug-Free)
+   LOVE LUDU 💞 — Real Ludo King Engine (Robust & Zero-NaN Sync)
    ============================================================ */
 
 const canvas = document.getElementById('luduCanvas');
@@ -147,15 +147,17 @@ function getCellCoords(r, c) {
 function getTokenCell(playerIdx, tokenIdx) {
   const t = state.tokens[playerIdx][tokenIdx];
   const p = PLAYERS[playerIdx];
-  if (t.progress === 0) {
+  const prog = (t && typeof t.progress === 'number' && !isNaN(t.progress)) ? t.progress : 0;
+
+  if (prog === 0) {
     return p.yardCells[tokenIdx];
   }
-  if (t.progress >= 1 && t.progress <= RING_LEN) {
-    const ringIdx = (p.startIndex + t.progress - 1) % RING_LEN;
+  if (prog >= 1 && prog <= RING_LEN) {
+    const ringIdx = (p.startIndex + prog - 1) % RING_LEN;
     return RING[ringIdx];
   }
-  if (t.progress > RING_LEN && t.progress <= RING_LEN + HOME_LEN) {
-    const homeIdx = t.progress - RING_LEN - 1;
+  if (prog > RING_LEN && prog <= RING_LEN + HOME_LEN) {
+    const homeIdx = prog - RING_LEN - 1;
     return p.homeStretch[homeIdx];
   }
   return p.homeTarget;
@@ -464,22 +466,24 @@ function ringIndexOfProgress(playerIdx, progress) {
 }
 
 function legalMoves(playerIdx, dice) {
+  if (typeof dice !== 'number' || isNaN(dice) || dice < 1 || dice > 6) return [];
   const moves = [];
   state.tokens[playerIdx].forEach((t, idx) => {
-    if (t.progress === FINISH) return;
-    if (t.progress === 0) {
+    const prog = (t && typeof t.progress === 'number' && !isNaN(t.progress)) ? t.progress : 0;
+    if (prog === FINISH) return;
+    if (prog === 0) {
       if (dice === 6) moves.push(idx);
       return;
     }
-    if (t.progress + dice <= FINISH) moves.push(idx);
+    if (prog + dice <= FINISH) moves.push(idx);
   });
   return moves;
 }
 
 function getMovePath(playerIdx, tokenIdx, dice) {
   const t = state.tokens[playerIdx][tokenIdx];
-  const startProgress = t.progress;
-  const targetProgress = startProgress === 0 ? 1 : startProgress + dice;
+  const startProgress = (t && typeof t.progress === 'number' && !isNaN(t.progress)) ? t.progress : 0;
+  const targetProgress = startProgress === 0 ? 1 : Math.min(FINISH, startProgress + dice);
 
   const path = [];
   for (let prog = startProgress; prog <= targetProgress; prog++) {
@@ -499,8 +503,11 @@ function getMovePath(playerIdx, tokenIdx, dice) {
 }
 
 function applyMove(playerIdx, tokenIdx, dice, onDone) {
+  const validDice = (typeof dice === 'number' && !isNaN(dice) && dice >= 1 && dice <= 6) ? dice : 1;
   const t = state.tokens[playerIdx][tokenIdx];
-  const path = getMovePath(playerIdx, tokenIdx, dice);
+  const currentProg = (t && typeof t.progress === 'number' && !isNaN(t.progress)) ? t.progress : 0;
+
+  const path = getMovePath(playerIdx, tokenIdx, validDice);
 
   state.animatingToken = {
     playerIdx,
@@ -509,8 +516,11 @@ function applyMove(playerIdx, tokenIdx, dice, onDone) {
     currentStep: 0,
     t: 0,
     onComplete: () => {
-      if (t.progress === 0) t.progress = 1;
-      else t.progress += dice;
+      if (currentProg === 0) {
+        t.progress = 1;
+      } else {
+        t.progress = Math.min(FINISH, currentProg + validDice);
+      }
 
       let captured = false;
       let reachedHome = (t.progress === FINISH);
@@ -559,15 +569,14 @@ canvas.addEventListener('pointerdown', e => {
 
     if (dist < cellSize * 0.95) {
       if (!isLocalMode && roomRef) {
-        // Broadcast move choice to Firebase
         roomRef.child('move').set({
           playerIdx: state.current,
           tokenIdx: tokenIdx,
-          dice: state.dice,
+          dice: state.dice || 1,
           ts: Date.now()
         });
       } else {
-        performMove(tokenIdx);
+        performMove(tokenIdx, state.dice);
       }
       break;
     }
@@ -628,7 +637,7 @@ function updateUI() {
     }
   }
 
-  // Configure dice buttons
+  // Dice buttons setup
   const myDiceBtn = bottomDiceBtn;
   const oppDiceBtn = topDiceBtn;
 
@@ -667,11 +676,9 @@ bottomDiceBtn.addEventListener('click', () => {
   if (state.rolling || state.awaitingSelection || state.animatingToken) return;
   if (!isLocalMode && state.current !== localPlayerIdx) return;
 
-  // Active player calculates authoritative dice value
   const val = 1 + Math.floor(Math.random() * 6);
 
   if (!isLocalMode && roomRef) {
-    // Broadcast roll to Firebase
     roomRef.child('roll').set({ playerIdx: state.current, val: val, ts: Date.now() });
   } else {
     executeDiceRollAnimation(state.current, val);
@@ -683,7 +690,6 @@ function executeDiceRollAnimation(playerIdx, val) {
   state.awaitingSelection = false;
   state.movable = [];
 
-  // Identify which UI dice button should animate
   const isMe = isLocalMode ? (playerIdx === 0) : (playerIdx === localPlayerIdx);
   const activeDiceBtn = isMe ? bottomDiceBtn : topDiceBtn;
 
@@ -707,7 +713,6 @@ function executeDiceRollAnimation(playerIdx, val) {
         state.consecutiveSixes = 0;
       }
 
-      // Check 3 consecutive 6s penalty
       if (state.consecutiveSixes >= 3) {
         showTurnBanner('পর পর ৩টি ৬! চাল বাতিল ⚠️');
         state.consecutiveSixes = 0;
@@ -731,7 +736,7 @@ function executeDiceRollAnimation(playerIdx, val) {
           if (!isLocalMode && roomRef) {
             roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: moves[0], dice: val, ts: Date.now() });
           } else {
-            setTimeout(() => performMove(moves[0]), 350);
+            setTimeout(() => performMove(moves[0], val), 350);
           }
         }
         return;
@@ -748,10 +753,11 @@ function executeDiceRollAnimation(playerIdx, val) {
   }, 60);
 }
 
-function performMove(tokenIdx) {
+function performMove(tokenIdx, explicitDice) {
+  const dice = (typeof explicitDice === 'number' && !isNaN(explicitDice) && explicitDice >= 1 && explicitDice <= 6) ? explicitDice : (state.dice || 1);
+  state.dice = dice;
   state.awaitingSelection = false;
   state.movable = [];
-  const dice = state.dice;
 
   applyMove(state.current, tokenIdx, dice, ({ captured, reachedHome }) => {
     let getExtraTurn = (dice === 6) || captured || reachedHome;
@@ -853,7 +859,6 @@ function applyRemoteState(data) {
 }
 
 function attachRoomListeners() {
-  // Listen for full state updates
   roomRef.child('state').on('value', snap => {
     const data = snap.val();
     if (!data) return;
@@ -862,7 +867,6 @@ function attachRoomListeners() {
     applyRemoteState(data);
   });
 
-  // Listen for roll events
   roomRef.child('roll').on('value', snap => {
     const data = snap.val();
     if (!data || data.ts <= lastRollTs) return;
@@ -870,15 +874,13 @@ function attachRoomListeners() {
     executeDiceRollAnimation(data.playerIdx, data.val);
   });
 
-  // Listen for move events
   roomRef.child('move').on('value', snap => {
     const data = snap.val();
     if (!data || data.ts <= lastMoveTs) return;
     lastMoveTs = data.ts;
-    performMove(data.tokenIdx);
+    performMove(data.tokenIdx, data.dice);
   });
 
-  // Listen for love emoji reactions
   roomRef.child('love').on('value', snap => {
     const d = snap.val();
     if (!d || d.ts === lastLoveTs) return;
@@ -886,7 +888,6 @@ function attachRoomListeners() {
     rainEmojis([EMOJI[d.type]], 22);
   });
 
-  // Listen for players joining
   roomRef.child('players').on('value', snap => {
     const d = snap.val() || {};
     if (d.p1) PLAYERS[0].name = d.p1;
