@@ -1,4 +1,4 @@
-﻿/* ============================================================
+/* ============================================================
    LOVE LUDU 💞 — Real Ludo King Engine (Single-Trigger & Zero-Lock)
    ============================================================ */
 
@@ -215,10 +215,10 @@ function drawYard(r0, c0, color) {
   ctx.stroke();
 
   const centers = [
-    { r: r0 + 1.9, c: c0 + 1.9 },
-    { r: r0 + 1.9, c: c0 + 4.1 },
-    { r: r0 + 4.1, c: c0 + 1.9 },
-    { r: r0 + 4.1, c: c0 + 4.1 }
+    { r: r0 + 2.5, c: c0 + 2.5 },
+    { r: r0 + 2.5, c: c0 + 3.5 },
+    { r: r0 + 3.5, c: c0 + 2.5 },
+    { r: r0 + 3.5, c: c0 + 3.5 }
   ];
   centers.forEach(pos => {
     const cx = pos.c * cellSize;
@@ -316,8 +316,9 @@ function drawPawn(cx, cy, color, isHighlight = false, bounceOffset = 0, scale = 
 
   // Movable Glow Ring
   if (isHighlight) {
+    const pulse = 1.35 + 0.15 * Math.sin(Date.now() / 150);
     ctx.beginPath();
-    ctx.arc(cx, py, rad * 1.4, 0, Math.PI * 2);
+    ctx.arc(cx, py, rad * pulse, 0, Math.PI * 2);
     ctx.fillStyle = 'rgba(243, 198, 79, 0.45)';
     ctx.fill();
     ctx.strokeStyle = PALETTE.gold;
@@ -503,6 +504,13 @@ function getMovePath(playerIdx, tokenIdx, dice) {
 }
 
 function applyMove(playerIdx, tokenIdx, dice, onDone) {
+  // BUG FIX: If an animation is already in progress, flush it cleanly first
+  if (state.animatingToken && state.animatingToken.onComplete) {
+    const prevCb = state.animatingToken.onComplete;
+    state.animatingToken = null;
+    try { prevCb(); } catch (e) {}
+  }
+
   const validDice = (typeof dice === 'number' && !isNaN(dice) && dice >= 1 && dice <= 6) ? dice : 1;
   const t = state.tokens[playerIdx][tokenIdx];
   const currentProg = (t && typeof t.progress === 'number' && !isNaN(t.progress)) ? t.progress : 0;
@@ -562,26 +570,33 @@ canvas.addEventListener('pointerdown', e => {
   const tapY = (e.clientY - rect.top) * scaleY;
 
   const movableTokens = state.movable;
+  let clickedTokenIdx = -1;
+  let minDistance = Infinity;
+
   for (const tokenIdx of movableTokens) {
     const cell = getTokenCell(state.current, tokenIdx);
     const coords = getCellCoords(cell.r, cell.c);
     const dist = Math.hypot(tapX - coords.cx, tapY - coords.cy);
 
-    if (dist < cellSize * 0.95) {
-      const dice = state.dice || 1;
-      if (!isLocalMode && roomRef) {
-        // In Online Mode, send move to Firebase; ref('move') listener will trigger performMove
-        roomRef.child('move').set({
-          playerIdx: state.current,
-          tokenIdx: tokenIdx,
-          dice: dice,
-          ts: Date.now()
-        }).catch(err => console.warn('Firebase move push error:', err));
-      } else {
-        // In Local Mode, perform move directly
-        performMove(tokenIdx, dice);
-      }
-      break;
+    if (dist < cellSize * 1.3 && dist < minDistance) {
+      minDistance = dist;
+      clickedTokenIdx = tokenIdx;
+    }
+  }
+
+  if (clickedTokenIdx !== -1) {
+    const dice = state.dice || 1;
+    if (!isLocalMode && roomRef) {
+      // In Online Mode, send move to Firebase; ref('move') listener will trigger performMove
+      roomRef.child('move').set({
+        playerIdx: state.current,
+        tokenIdx: clickedTokenIdx,
+        dice: dice,
+        ts: Date.now()
+      }).catch(err => console.warn('Firebase move push error:', err));
+    } else {
+      // In Local Mode, perform move directly
+      performMove(clickedTokenIdx, dice);
     }
   }
 });
@@ -641,7 +656,7 @@ function updateUI() {
   }
 
   // Dice button enable/disable setup
-  const canRoll = isMyTurn && !state.rolling && !state.awaitingSelection && !state.animatingToken;
+  const canRoll = isMyTurn && !state.rolling && !state.animatingToken;
 
   if (isLocalMode) {
     // In local Pass & Play, enable whichever card's turn it currently is!
@@ -692,7 +707,7 @@ function showTurnBanner(text) {
 
 // Unified dice click handler
 function handleDiceClick(clickedPlayerIdx) {
-  if (state.rolling || state.awaitingSelection || state.animatingToken) return;
+  if (state.rolling || state.animatingToken) return;
 
   if (isLocalMode) {
     if (clickedPlayerIdx !== state.current) return;
@@ -701,15 +716,46 @@ function handleDiceClick(clickedPlayerIdx) {
     if (clickedPlayerIdx !== localPlayerIdx) return;
   }
 
+  // BUG FIX: If user clicks dice button while awaiting selection, auto-move the movable pawn!
+  if (state.awaitingSelection && state.movable.length > 0) {
+    const tokenIdx = state.movable[0];
+    const dice = state.dice || 1;
+    if (!isLocalMode && roomRef) {
+      roomRef.child('move').set({
+        playerIdx: state.current,
+        tokenIdx: tokenIdx,
+        dice: dice,
+        ts: Date.now()
+      }).catch(err => console.warn('Firebase move push error:', err));
+    } else {
+      performMove(tokenIdx, dice);
+    }
+    return;
+  }
+
   const val = Math.floor(Math.random() * 6) + 1;
   state.rolling = true;
+
+  // Safety Timeout: Reset rolling state if network/animation hangs for over 3s
+  clearTimeout(window._rollingSafetyTimer);
+  window._rollingSafetyTimer = setTimeout(() => {
+    if (state.rolling) {
+      console.warn('Rolling state safety timeout reset');
+      state.rolling = false;
+      updateUI();
+    }
+  }, 3000);
 
   if (!isLocalMode && roomRef) {
     roomRef.child('roll').set({
       playerIdx: state.current,
       val: val,
       ts: Date.now()
-    }).catch(err => console.warn('Firebase roll push error:', err));
+    }).catch(err => {
+      console.warn('Firebase roll push error:', err);
+      state.rolling = false;
+      updateUI();
+    });
   } else {
     executeDiceRollAnimation(state.current, val);
   }
@@ -914,8 +960,10 @@ function applyRemoteState(data) {
   // running on this device, state.rolling=true would block the UI.
   state.rolling = false;
 
-  state.awaitingSelection = false;
-  state.movable = [];
+  if (!isLocalMode && state.current !== localPlayerIdx) {
+    state.awaitingSelection = false;
+    state.movable = [];
+  }
 
   updateUI();
 
