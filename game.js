@@ -1,4 +1,4 @@
-/* ============================================================
+﻿/* ============================================================
    LOVE LUDU 💞 — Real Ludo King Engine (Single-Trigger & Zero-Lock)
    ============================================================ */
 
@@ -698,12 +698,18 @@ function handleDiceClick(clickedPlayerIdx) {
     if (clickedPlayerIdx !== state.current) return;
   } else {
     if (state.current !== localPlayerIdx) return;
+    if (clickedPlayerIdx !== localPlayerIdx) return;
   }
 
-  const val = 1 + Math.floor(Math.random() * 6);
+  const val = Math.floor(Math.random() * 6) + 1;
+  state.rolling = true;
 
   if (!isLocalMode && roomRef) {
-    roomRef.child('roll').set({ playerIdx: state.current, val: val, ts: Date.now() }).catch(err => console.warn('Firebase roll push error:', err));
+    roomRef.child('roll').set({
+      playerIdx: state.current,
+      val: val,
+      ts: Date.now()
+    }).catch(err => console.warn('Firebase roll push error:', err));
   } else {
     executeDiceRollAnimation(state.current, val);
   }
@@ -742,6 +748,11 @@ function executeDiceRollAnimation(playerIdx, val) {
       state.rolling = false;
       activeDiceBtn.textContent = DICE_EMOJIS[val - 1];
 
+      // BUG FIX: Always refresh UI after dice animation ends.
+      // Prevents dice button staying disabled when applyRemoteState
+      // fired mid-animation and changed state.current.
+      updateUI();
+
       if (val === 6) {
         state.consecutiveSixes++;
       } else {
@@ -752,7 +763,7 @@ function executeDiceRollAnimation(playerIdx, val) {
         showTurnBanner('পর পর ৩টি ৬! চাল বাতিল ⚠️');
         state.consecutiveSixes = 0;
         if (isLocalMode || playerIdx === localPlayerIdx) {
-          setTimeout(() => endTurn(false), 1200);
+          setTimeout(() => endTurn(playerIdx, false), 1200);
         }
         return;
       }
@@ -762,25 +773,24 @@ function executeDiceRollAnimation(playerIdx, val) {
       if (moves.length === 0) {
         showTurnBanner('কোনো চাল নেই... 😢');
         if (isLocalMode || playerIdx === localPlayerIdx) {
-          setTimeout(() => endTurn(val === 6), 900);
+          setTimeout(() => endTurn(playerIdx, val === 6), 900);
         }
         return;
       }
 
       if (moves.length === 1) {
-        showTurnBanner('গুটি নড়ছে... 🚀');
+        showTurnBanner('গুটি নড়ছে... 🚀');
         if (!isLocalMode && roomRef) {
           if (playerIdx === localPlayerIdx) {
             roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: moves[0], dice: val, ts: Date.now() }).catch(err => console.warn(err));
           }
-          // Remote device will execute move when ref('move') fires!
         } else {
           setTimeout(() => performMove(moves[0], val), 300);
         }
         return;
       }
 
-      // Multiple legal moves
+      // Multiple legal moves — player must tap a pawn
       showTurnBanner('গুটিতে ট্যাপ করো 🎯');
       if (isLocalMode || playerIdx === localPlayerIdx) {
         state.awaitingSelection = true;
@@ -792,38 +802,49 @@ function executeDiceRollAnimation(playerIdx, val) {
 }
 
 function performMove(tokenIdx, explicitDice) {
+  // BUG FIX: Capture the current player NOW before any async animation.
+  // Without this, applyRemoteState from the other device can change
+  // state.current mid-animation, causing BOTH devices to call endTurn
+  // (the "turn ping-pong" freeze where turns bounce back and forth).
+  const movedByPlayer = state.current;
+
   const dice = (typeof explicitDice === 'number' && !isNaN(explicitDice) && explicitDice >= 1 && explicitDice <= 6) ? explicitDice : (state.dice || 1);
   state.dice = dice;
   state.awaitingSelection = false;
   state.movable = [];
 
-  applyMove(state.current, tokenIdx, dice, ({ captured, reachedHome }) => {
+  applyMove(movedByPlayer, tokenIdx, dice, ({ captured, reachedHome }) => {
     let getExtraTurn = (dice === 6) || captured || reachedHome;
 
     if (captured) {
-      showTurnBanner('💥 কাটা পড়েছে! আবার চাল 🎉');
+      showTurnBanner('💥 কাটা পড়েছে! আবার চাল 🎉');
       rainEmojis(['😲', '🔥', '💥'], 8);
     } else if (reachedHome) {
       showTurnBanner('🏆 ১টি গুটি হোমে পৌঁছাল! আবার চাল 🎉');
       rainEmojis(['🏆', '✨', '💖'], 10);
     }
 
-    if (state.finished[state.current] === 4) {
-      if (isLocalMode || state.current === localPlayerIdx) pushState();
+    if (state.finished[movedByPlayer] === 4) {
+      if (isLocalMode || movedByPlayer === localPlayerIdx) pushState();
       winShown = true;
-      showWin(state.current);
+      showWin(movedByPlayer);
       return;
     }
 
-    if (isLocalMode || state.current === localPlayerIdx) {
-      endTurn(getExtraTurn);
+    // Only the device that owns this player calls endTurn.
+    // Uses captured movedByPlayer, NOT state.current.
+    if (isLocalMode || movedByPlayer === localPlayerIdx) {
+      endTurn(movedByPlayer, getExtraTurn);
     }
   });
 }
 
-function endTurn(extraTurn) {
+function endTurn(playerIdx, extraTurn) {
+  // BUG FIX: Accept explicit playerIdx instead of reading state.current.
+  // This prevents the race condition where applyRemoteState already
+  // changed state.current, causing 1 - state.current to be wrong.
   if (!extraTurn) {
-    state.current = 1 - state.current;
+    state.current = 1 - playerIdx;
     state.consecutiveSixes = 0;
   }
   state.dice = null;
@@ -883,7 +904,15 @@ function applyRemoteState(data) {
   if (Array.isArray(data.tokens)) state.tokens = data.tokens;
   if (Array.isArray(data.finished)) state.finished = data.finished;
   if (typeof data.current === 'number') state.current = data.current;
-  if (typeof data.dice === 'number') state.dice = data.dice;
+
+  // BUG FIX: Handle null dice properly. typeof null === 'object', not 'number',
+  // so the old check never cleared state.dice on the remote device.
+  state.dice = (typeof data.dice === 'number') ? data.dice : null;
+
+  // BUG FIX: Clear rolling flag so dice button can be re-enabled.
+  // If applyRemoteState fires while executeDiceRollAnimation is still
+  // running on this device, state.rolling=true would block the UI.
+  state.rolling = false;
 
   state.awaitingSelection = false;
   state.movable = [];
