@@ -1,5 +1,5 @@
 /* ============================================================
-   LOVE LUDU 💞 — Real Ludo King Engine (Robust & Zero-NaN Sync)
+   LOVE LUDU 💞 — Real Ludo King Engine (Optimized & Instant Move Sync)
    ============================================================ */
 
 const canvas = document.getElementById('luduCanvas');
@@ -568,16 +568,16 @@ canvas.addEventListener('pointerdown', e => {
     const dist = Math.hypot(tapX - coords.cx, tapY - coords.cy);
 
     if (dist < cellSize * 0.95) {
+      const dice = state.dice || 1;
       if (!isLocalMode && roomRef) {
         roomRef.child('move').set({
           playerIdx: state.current,
           tokenIdx: tokenIdx,
-          dice: state.dice || 1,
+          dice: dice,
           ts: Date.now()
-        });
-      } else {
-        performMove(tokenIdx, state.dice);
+        }).catch(err => console.warn('Firebase move push error:', err));
       }
+      performMove(tokenIdx, dice);
       break;
     }
   }
@@ -637,7 +637,6 @@ function updateUI() {
     }
   }
 
-  // Dice buttons setup
   const myDiceBtn = bottomDiceBtn;
   const oppDiceBtn = topDiceBtn;
 
@@ -679,10 +678,9 @@ bottomDiceBtn.addEventListener('click', () => {
   const val = 1 + Math.floor(Math.random() * 6);
 
   if (!isLocalMode && roomRef) {
-    roomRef.child('roll').set({ playerIdx: state.current, val: val, ts: Date.now() });
-  } else {
-    executeDiceRollAnimation(state.current, val);
+    roomRef.child('roll').set({ playerIdx: state.current, val: val, ts: Date.now() }).catch(err => console.warn('Firebase roll push error:', err));
   }
+  executeDiceRollAnimation(state.current, val);
 });
 
 function executeDiceRollAnimation(playerIdx, val) {
@@ -732,13 +730,10 @@ function executeDiceRollAnimation(playerIdx, val) {
       }
       if (moves.length === 1) {
         showTurnBanner('গুটি নড়ছে... 🚀');
-        if (isLocalMode || playerIdx === localPlayerIdx) {
-          if (!isLocalMode && roomRef) {
-            roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: moves[0], dice: val, ts: Date.now() });
-          } else {
-            setTimeout(() => performMove(moves[0], val), 350);
-          }
+        if (!isLocalMode && roomRef && playerIdx === localPlayerIdx) {
+          roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: moves[0], dice: val, ts: Date.now() }).catch(err => console.warn(err));
         }
+        setTimeout(() => performMove(moves[0], val), 300);
         return;
       }
 
@@ -829,7 +824,7 @@ function pushState() {
     current: state.current,
     dice: state.dice,
     ts: Date.now()
-  });
+  }).catch(err => console.warn('Firebase state push error:', err));
 }
 
 function pushLove(type) {
@@ -837,7 +832,7 @@ function pushLove(type) {
     rainEmojis([EMOJI[type]], 20);
     return;
   }
-  roomRef.child('love').set({ type, from: localPlayerIdx, ts: Date.now() });
+  roomRef.child('love').set({ type, from: localPlayerIdx, ts: Date.now() }).catch(err => console.warn(err));
 }
 
 function applyRemoteState(data) {
@@ -859,6 +854,15 @@ function applyRemoteState(data) {
 }
 
 function attachRoomListeners() {
+  // Listen for connection status
+  if (typeof db !== 'undefined') {
+    db.ref('.info/connected').on('value', snap => {
+      if (snap.val() === false && !isLocalMode) {
+        console.warn('Firebase Realtime Database disconnected');
+      }
+    });
+  }
+
   roomRef.child('state').on('value', snap => {
     const data = snap.val();
     if (!data) return;
@@ -878,7 +882,9 @@ function attachRoomListeners() {
     const data = snap.val();
     if (!data || data.ts <= lastMoveTs) return;
     lastMoveTs = data.ts;
-    performMove(data.tokenIdx, data.dice);
+    if (state.current !== localPlayerIdx) {
+      performMove(data.tokenIdx, data.dice);
+    }
   });
 
   roomRef.child('love').on('value', snap => {
@@ -913,7 +919,7 @@ function enterGameScreen() {
 document.getElementById('createRoomBtn').addEventListener('click', () => {
   const name = document.getElementById('myName').value.trim() || 'তুমি';
   if (typeof db === 'undefined') {
-    document.getElementById('lobbyError').textContent = 'Firebase config বসানো হয়নি — firebase-config.js চেক করো।';
+    document.getElementById('lobbyError').innerHTML = 'Firebase config পাওয়া যায়নি — <code>firebase-config.js</code> সেটআপ করুন।';
     return;
   }
   roomCode = randomRoomCode();
@@ -940,8 +946,8 @@ document.getElementById('createRoomBtn').addEventListener('click', () => {
 
     attachRoomListeners();
   }).catch(err => {
-    document.getElementById('lobbyError').textContent = 'রুম বানাতে সমস্যা হয়েছে — Firebase config চেক করো।';
-    console.error(err);
+    document.getElementById('lobbyError').innerHTML = 'রুম বানাতে সমস্যা হয়েছে! ⚠️ Firebase Console-এ <b>Realtime Database</b> ক্রিয়েট ও Rules <code>".read": true, ".write": true</code> করা আছে কিনা চেক করুন।';
+    console.error('Firebase Room Creation Error:', err);
   });
 });
 
@@ -961,7 +967,7 @@ document.getElementById('joinRoomBtn').addEventListener('click', () => {
   const ref = db.ref('rooms/' + code);
   ref.get().then(snap => {
     if (!snap.exists()) {
-      document.getElementById('lobbyError').textContent = 'এই কোডে কোনো রুম পাওয়া যায়নি।';
+      document.getElementById('lobbyError').textContent = 'এই কোডে কোনো রুম পাওয়া যায়নি। কোডটি চেক করুন।';
       return;
     }
     localPlayerIdx = 1;
@@ -974,8 +980,8 @@ document.getElementById('joinRoomBtn').addEventListener('click', () => {
       attachRoomListeners();
     });
   }).catch(err => {
-    document.getElementById('lobbyError').textContent = 'জয়েন করতে সমস্যা হয়েছে।';
-    console.error(err);
+    document.getElementById('lobbyError').innerHTML = 'জয়েন করতে সমস্যা হয়েছে! ⚠️ Firebase <b>Realtime Database</b> চালু আছে কিনা চেক করুন।';
+    console.error('Firebase Join Room Error:', err);
   });
 });
 
