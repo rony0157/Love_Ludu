@@ -1,5 +1,5 @@
 /* ============================================================
-   LOVE LUDU 💞 — Real Ludo King Engine (Optimized & Instant Move Sync)
+   LOVE LUDU 💞 — Real Ludo King Engine (Single-Trigger & Zero-Lock)
    ============================================================ */
 
 const canvas = document.getElementById('luduCanvas');
@@ -570,14 +570,17 @@ canvas.addEventListener('pointerdown', e => {
     if (dist < cellSize * 0.95) {
       const dice = state.dice || 1;
       if (!isLocalMode && roomRef) {
+        // In Online Mode, send move to Firebase; ref('move') listener will trigger performMove
         roomRef.child('move').set({
           playerIdx: state.current,
           tokenIdx: tokenIdx,
           dice: dice,
           ts: Date.now()
         }).catch(err => console.warn('Firebase move push error:', err));
+      } else {
+        // In Local Mode, perform move directly
+        performMove(tokenIdx, dice);
       }
-      performMove(tokenIdx, dice);
       break;
     }
   }
@@ -637,18 +640,33 @@ function updateUI() {
     }
   }
 
-  const myDiceBtn = bottomDiceBtn;
-  const oppDiceBtn = topDiceBtn;
-
+  // Dice button enable/disable setup
   const canRoll = isMyTurn && !state.rolling && !state.awaitingSelection && !state.animatingToken;
-  myDiceBtn.disabled = !canRoll;
-  oppDiceBtn.disabled = true;
+
+  if (isLocalMode) {
+    // In local Pass & Play, enable whichever card's turn it currently is!
+    if (activeIdx === 0) {
+      bottomDiceBtn.disabled = !canRoll;
+      topDiceBtn.disabled = true;
+      if (canRoll) bottomDiceBtn.classList.add('turn-glow'); else bottomDiceBtn.classList.remove('turn-glow');
+      topDiceBtn.classList.remove('turn-glow');
+    } else {
+      topDiceBtn.disabled = !canRoll;
+      bottomDiceBtn.disabled = true;
+      if (canRoll) topDiceBtn.classList.add('turn-glow'); else topDiceBtn.classList.remove('turn-glow');
+      bottomDiceBtn.classList.remove('turn-glow');
+    }
+  } else {
+    // Online mode: bottomDiceBtn is always local player's dice!
+    bottomDiceBtn.disabled = !canRoll;
+    topDiceBtn.disabled = true;
+    if (canRoll) bottomDiceBtn.classList.add('turn-glow'); else bottomDiceBtn.classList.remove('turn-glow');
+    topDiceBtn.classList.remove('turn-glow');
+  }
 
   if (canRoll) {
-    myDiceBtn.classList.add('turn-glow');
     showTurnBanner(isLocalMode ? `${activePlayer.name}-এর চাল 🎯` : 'তোমার চাল! ডাইস চাপো 🎯');
   } else {
-    myDiceBtn.classList.remove('turn-glow');
     if (!state.rolling && !state.awaitingSelection) {
       showTurnBanner(`${activePlayer.name}-এর চাল... 🎲`);
     }
@@ -656,10 +674,12 @@ function updateUI() {
 
   if (state.dice && !state.rolling) {
     const diceChar = DICE_EMOJIS[state.dice - 1] || '🎲';
-    if (activeIdx === (isLocalMode ? 0 : localPlayerIdx)) {
-      myDiceBtn.textContent = diceChar;
+    if (isLocalMode) {
+      if (activeIdx === 0) bottomDiceBtn.textContent = diceChar;
+      else topDiceBtn.textContent = diceChar;
     } else {
-      oppDiceBtn.textContent = diceChar;
+      if (activeIdx === localPlayerIdx) bottomDiceBtn.textContent = diceChar;
+      else topDiceBtn.textContent = diceChar;
     }
   }
 }
@@ -670,17 +690,34 @@ function showTurnBanner(text) {
   setTimeout(() => turnBanner.classList.remove('show'), 2200);
 }
 
-// Player clicks dice button
-bottomDiceBtn.addEventListener('click', () => {
+// Unified dice click handler
+function handleDiceClick(clickedPlayerIdx) {
   if (state.rolling || state.awaitingSelection || state.animatingToken) return;
-  if (!isLocalMode && state.current !== localPlayerIdx) return;
+
+  if (isLocalMode) {
+    if (clickedPlayerIdx !== state.current) return;
+  } else {
+    if (state.current !== localPlayerIdx) return;
+  }
 
   const val = 1 + Math.floor(Math.random() * 6);
 
   if (!isLocalMode && roomRef) {
     roomRef.child('roll').set({ playerIdx: state.current, val: val, ts: Date.now() }).catch(err => console.warn('Firebase roll push error:', err));
+  } else {
+    executeDiceRollAnimation(state.current, val);
   }
-  executeDiceRollAnimation(state.current, val);
+}
+
+bottomDiceBtn.addEventListener('click', () => {
+  const pIdx = isLocalMode ? 0 : localPlayerIdx;
+  handleDiceClick(pIdx);
+});
+
+topDiceBtn.addEventListener('click', () => {
+  if (isLocalMode) {
+    handleDiceClick(1);
+  }
 });
 
 function executeDiceRollAnimation(playerIdx, val) {
@@ -721,6 +758,7 @@ function executeDiceRollAnimation(playerIdx, val) {
       }
 
       const moves = legalMoves(playerIdx, val);
+
       if (moves.length === 0) {
         showTurnBanner('কোনো চাল নেই... 😢');
         if (isLocalMode || playerIdx === localPlayerIdx) {
@@ -728,12 +766,17 @@ function executeDiceRollAnimation(playerIdx, val) {
         }
         return;
       }
+
       if (moves.length === 1) {
         showTurnBanner('গুটি নড়ছে... 🚀');
-        if (!isLocalMode && roomRef && playerIdx === localPlayerIdx) {
-          roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: moves[0], dice: val, ts: Date.now() }).catch(err => console.warn(err));
+        if (!isLocalMode && roomRef) {
+          if (playerIdx === localPlayerIdx) {
+            roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: moves[0], dice: val, ts: Date.now() }).catch(err => console.warn(err));
+          }
+          // Remote device will execute move when ref('move') fires!
+        } else {
+          setTimeout(() => performMove(moves[0], val), 300);
         }
-        setTimeout(() => performMove(moves[0], val), 300);
         return;
       }
 
@@ -854,7 +897,6 @@ function applyRemoteState(data) {
 }
 
 function attachRoomListeners() {
-  // Listen for connection status
   if (typeof db !== 'undefined') {
     db.ref('.info/connected').on('value', snap => {
       if (snap.val() === false && !isLocalMode) {
@@ -882,9 +924,7 @@ function attachRoomListeners() {
     const data = snap.val();
     if (!data || data.ts <= lastMoveTs) return;
     lastMoveTs = data.ts;
-    if (state.current !== localPlayerIdx) {
-      performMove(data.tokenIdx, data.dice);
-    }
+    performMove(data.tokenIdx, data.dice);
   });
 
   roomRef.child('love').on('value', snap => {
@@ -946,7 +986,7 @@ document.getElementById('createRoomBtn').addEventListener('click', () => {
 
     attachRoomListeners();
   }).catch(err => {
-    document.getElementById('lobbyError').innerHTML = 'রুম বানাতে সমস্যা হয়েছে! ⚠️ Firebase Console-এ <b>Realtime Database</b> ক্রিয়েট ও Rules <code>".read": true, ".write": true</code> করা আছে কিনা চেক করুন।';
+    document.getElementById('lobbyError').innerHTML = 'রুম বানাতে সমস্যা হয়েছে! ⚠️ Firebase Console-এ <b>Realtime Database</b> ক্রিয়েট করা আছে কিনা চেক করুন।';
     console.error('Firebase Room Creation Error:', err);
   });
 });
