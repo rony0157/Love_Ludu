@@ -1256,18 +1256,40 @@ let bgmNoteIdx = 0;
 function startBGM() {
   if (isBgmPlaying || isMusicMuted) return;
   isBgmPlaying = true;
-  clearInterval(bgmInterval);
-  bgmInterval = setInterval(() => {
-    if (isMusicMuted || !isBgmPlaying) return;
-    const freq = ROMANTIC_MELODY[bgmNoteIdx % ROMANTIC_MELODY.length];
-    bgmNoteIdx++;
-    playTone(freq, 'sine', 0.55, 0.05);
-  }, 480);
+
+  const bgmAudio = document.getElementById('bgmAudio');
+  if (bgmAudio) {
+    bgmAudio.volume = 0.35;
+    bgmAudio.play().then(() => {
+      console.log('[LoveLudu] MP3 Romantic Lullaby playing');
+    }).catch(err => {
+      console.warn('[LoveLudu] MP3 autoplay blocked, using Kalimba Synth fallback');
+      clearInterval(bgmInterval);
+      bgmInterval = setInterval(() => {
+        if (isMusicMuted || !isBgmPlaying) return;
+        const freq = ROMANTIC_MELODY[bgmNoteIdx % ROMANTIC_MELODY.length];
+        bgmNoteIdx++;
+        playTone(freq, 'sine', 0.55, 0.05);
+      }, 480);
+    });
+  } else {
+    clearInterval(bgmInterval);
+    bgmInterval = setInterval(() => {
+      if (isMusicMuted || !isBgmPlaying) return;
+      const freq = ROMANTIC_MELODY[bgmNoteIdx % ROMANTIC_MELODY.length];
+      bgmNoteIdx++;
+      playTone(freq, 'sine', 0.55, 0.05);
+    }, 480);
+  }
 }
 
 function stopBGM() {
   isBgmPlaying = false;
   clearInterval(bgmInterval);
+  const bgmAudio = document.getElementById('bgmAudio');
+  if (bgmAudio) {
+    try { bgmAudio.pause(); } catch (e) {}
+  }
 }
 
 function toggleMusic() {
