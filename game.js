@@ -96,6 +96,7 @@ const state = {
   current: 0,             // 0: Red/Tumi, 1: Blue/Papri
   dice: null,
   rolling: false,
+  busy: false,            // Zero-Lock Flag: Prevents overlapping actions & timeouts
   consecutiveSixes: 0,
   awaitingSelection: false,
   movable: [],
@@ -116,6 +117,45 @@ let lastMoveTs = 0;
 let lastStateTs = 0;
 let lastLoveTs = 0;
 let winShown = false;
+let lastActivityTs = Date.now();
+
+// ------------------------------------------------------------
+// WATCHDOG ENGINE — ZERO-LOCK INFINITE GAME GUARANTEE
+// ------------------------------------------------------------
+setInterval(() => {
+  if (winShown) return;
+  const now = Date.now();
+
+  // If busy/rolling/animating state hangs for > 3.2 seconds without activity, force-heal!
+  if ((state.busy || state.rolling || state.animatingToken) && (now - lastActivityTs > 3200)) {
+    console.warn('[LoveLudu Watchdog] Stuck state auto-healed!');
+
+    if (state.animatingToken) {
+      if (typeof state.animatingToken.onComplete === 'function') {
+        try { state.animatingToken.onComplete(); } catch (e) {}
+      }
+      state.animatingToken = null;
+    }
+    state.rolling = false;
+    state.busy = false;
+    clearInterval(window._diceInterval);
+
+    if (typeof state.dice === 'number' && state.dice >= 1 && state.dice <= 6) {
+      const moves = legalMoves(state.current, state.dice);
+      if (moves.length > 0) {
+        state.awaitingSelection = true;
+        state.movable = moves;
+      } else {
+        endTurn(state.current, false);
+      }
+    } else {
+      state.awaitingSelection = false;
+      state.movable = [];
+    }
+    lastActivityTs = Date.now();
+    updateUI();
+  }
+}, 1000);
 
 // ------------------------------------------------------------
 // 3. CANVAS RESPONSIVE & DRAWING ENGINE
@@ -145,7 +185,7 @@ function getCellCoords(r, c) {
 }
 
 function getTokenCell(playerIdx, tokenIdx) {
-  const t = state.tokens[playerIdx][tokenIdx];
+  const t = state.tokens[playerIdx] && state.tokens[playerIdx][tokenIdx];
   const p = PLAYERS[playerIdx];
   const prog = (t && typeof t.progress === 'number' && !isNaN(t.progress)) ? t.progress : 0;
 
@@ -412,7 +452,7 @@ function drawAllTokens() {
     const anim = state.animatingToken;
     const p = PLAYERS[anim.playerIdx];
     const fromCell = anim.path[anim.currentStep];
-    const toCell = anim.path[anim.currentStep + 1];
+    const toCell = anim.path[anim.currentStep + 1] || fromCell;
 
     if (fromCell && toCell) {
       const fromCoords = getCellCoords(fromCell.r, fromCell.c);
@@ -505,7 +545,7 @@ function getMovePath(playerIdx, tokenIdx, dice) {
 }
 
 function applyMove(playerIdx, tokenIdx, dice, onDone) {
-  // BUG FIX: If an animation is already in progress, flush it cleanly first
+  lastActivityTs = Date.now();
   if (state.animatingToken && state.animatingToken.onComplete) {
     const prevCb = state.animatingToken.onComplete;
     state.animatingToken = null;
@@ -513,10 +553,19 @@ function applyMove(playerIdx, tokenIdx, dice, onDone) {
   }
 
   const validDice = (typeof dice === 'number' && !isNaN(dice) && dice >= 1 && dice <= 6) ? dice : 1;
-  const t = state.tokens[playerIdx][tokenIdx];
-  const currentProg = (t && typeof t.progress === 'number' && !isNaN(t.progress)) ? t.progress : 0;
+  const targetToken = state.tokens[playerIdx] && state.tokens[playerIdx][tokenIdx];
+  if (!targetToken) {
+    onDone({ captured: false, reachedHome: false });
+    return;
+  }
 
+  const currentProg = (typeof targetToken.progress === 'number' && !isNaN(targetToken.progress)) ? targetToken.progress : 0;
   const path = getMovePath(playerIdx, tokenIdx, validDice);
+
+  if (path.length === 0) {
+    onDone({ captured: false, reachedHome: false });
+    return;
+  }
 
   state.animatingToken = {
     playerIdx,
@@ -526,17 +575,23 @@ function applyMove(playerIdx, tokenIdx, dice, onDone) {
     t: 0,
     onComplete: () => {
       clearTimeout(window._animSafetyTimer);
-      if (currentProg === 0) {
-        t.progress = 1;
-      } else {
-        t.progress = Math.min(FINISH, currentProg + validDice);
+      state.animatingToken = null;
+      lastActivityTs = Date.now();
+
+      if (state.tokens[playerIdx] && state.tokens[playerIdx][tokenIdx]) {
+        if (currentProg === 0) {
+          state.tokens[playerIdx][tokenIdx].progress = 1;
+        } else {
+          state.tokens[playerIdx][tokenIdx].progress = Math.min(FINISH, currentProg + validDice);
+        }
       }
 
+      const finalProg = state.tokens[playerIdx][tokenIdx].progress;
       let captured = false;
-      let reachedHome = (t.progress === FINISH);
+      let reachedHome = (finalProg === FINISH);
 
-      if (t.progress >= 1 && t.progress <= RING_LEN) {
-        const ringIdx = ringIndexOfProgress(playerIdx, t.progress);
+      if (finalProg >= 1 && finalProg <= RING_LEN) {
+        const ringIdx = ringIndexOfProgress(playerIdx, finalProg);
         if (!SAFE_RING_INDICES.has(ringIdx)) {
           const opp = 1 - playerIdx;
           state.tokens[opp].forEach(ot => {
@@ -556,7 +611,6 @@ function applyMove(playerIdx, tokenIdx, dice, onDone) {
     }
   };
 
-  // Safety Timeout: Force complete animation if it hangs for >3.5s
   clearTimeout(window._animSafetyTimer);
   window._animSafetyTimer = setTimeout(() => {
     if (state.animatingToken) {
@@ -565,14 +619,14 @@ function applyMove(playerIdx, tokenIdx, dice, onDone) {
       state.animatingToken = null;
       if (cb) cb();
     }
-  }, 3500);
+  }, 1600);
 }
 
 // ------------------------------------------------------------
 // 8. USER INTERACTION & TOUCH/TAP HANDLER
 // ------------------------------------------------------------
 canvas.addEventListener('pointerdown', e => {
-  if (!state.awaitingSelection || state.animatingToken) return;
+  if (!state.awaitingSelection || state.animatingToken || state.busy) return;
   if (!isLocalMode && state.current !== localPlayerIdx) return;
 
   const rect = canvas.getBoundingClientRect();
@@ -591,9 +645,22 @@ canvas.addEventListener('pointerdown', e => {
     const coords = getCellCoords(cell.r, cell.c);
     const dist = Math.hypot(tapX - coords.cx, tapY - coords.cy);
 
-    if (dist < cellSize * 1.3 && dist < minDistance) {
+    if (dist < cellSize * 2.2 && dist < minDistance) {
       minDistance = dist;
       clickedTokenIdx = tokenIdx;
+    }
+  }
+
+  // Fallback: If player taps anywhere on canvas when awaiting selection, select nearest movable pawn
+  if (clickedTokenIdx === -1 && movableTokens.length > 0) {
+    for (const tokenIdx of movableTokens) {
+      const cell = getTokenCell(state.current, tokenIdx);
+      const coords = getCellCoords(cell.r, cell.c);
+      const dist = Math.hypot(tapX - coords.cx, tapY - coords.cy);
+      if (dist < minDistance) {
+        minDistance = dist;
+        clickedTokenIdx = tokenIdx;
+      }
     }
   }
 
@@ -602,8 +669,10 @@ canvas.addEventListener('pointerdown', e => {
     const player = state.current;
     state.awaitingSelection = false;
     state.movable = [];
+    state.busy = true;
     const ts = Date.now();
     lastMoveTs = ts;
+    lastActivityTs = ts;
 
     if (!isLocalMode && roomRef) {
       roomRef.child('move').set({
@@ -672,10 +741,9 @@ function updateUI() {
   }
 
   // Dice button enable/disable setup
-  const canRoll = isMyTurn && !state.rolling && !state.animatingToken;
+  const canRoll = isMyTurn && !state.rolling && !state.animatingToken && !state.busy;
 
   if (isLocalMode) {
-    // In local Pass & Play, keep both buttons interactive during turn!
     bottomDiceBtn.disabled = !canRoll;
     topDiceBtn.disabled = !canRoll;
     if (activeIdx === 0) {
@@ -686,7 +754,6 @@ function updateUI() {
       bottomDiceBtn.classList.remove('turn-glow');
     }
   } else {
-    // Online mode: bottomDiceBtn is always local player's dice!
     bottomDiceBtn.disabled = !canRoll;
     topDiceBtn.disabled = true;
     if (canRoll) bottomDiceBtn.classList.add('turn-glow'); else bottomDiceBtn.classList.remove('turn-glow');
@@ -721,7 +788,7 @@ function showTurnBanner(text) {
 
 // Unified dice click handler
 function handleDiceClick(clickedPlayerIdx) {
-  if (state.rolling || state.animatingToken) return;
+  if (state.rolling || state.animatingToken || state.busy) return;
 
   if (isLocalMode) {
     if (clickedPlayerIdx !== state.current) return;
@@ -730,15 +797,17 @@ function handleDiceClick(clickedPlayerIdx) {
     if (clickedPlayerIdx !== localPlayerIdx) return;
   }
 
-  // BUG FIX: If user clicks dice button while awaiting selection, auto-move the movable pawn!
+  // Auto-move pawn if awaiting selection and dice clicked again
   if (state.awaitingSelection && state.movable.length > 0) {
     const tokenIdx = state.movable[0];
     const dice = state.dice || 1;
     const player = state.current;
     state.awaitingSelection = false;
     state.movable = [];
+    state.busy = true;
     const ts = Date.now();
     lastMoveTs = ts;
+    lastActivityTs = ts;
 
     if (!isLocalMode && roomRef) {
       roomRef.child('move').set({
@@ -754,30 +823,38 @@ function handleDiceClick(clickedPlayerIdx) {
 
   const val = Math.floor(Math.random() * 6) + 1;
   state.rolling = true;
+  state.busy = true;
 
-  // Safety Timeout: Reset rolling state if network/animation hangs for over 3s
+  const ts = Date.now();
+  lastRollTs = ts;
+  lastActivityTs = ts;
+
+  // Safety Timeout: Reset rolling state if network/animation hangs
   clearTimeout(window._rollingSafetyTimer);
   window._rollingSafetyTimer = setTimeout(() => {
     if (state.rolling) {
       console.warn('Rolling state safety timeout reset');
       state.rolling = false;
+      state.busy = false;
       updateUI();
     }
-  }, 3000);
+  }, 2200);
 
   if (!isLocalMode && roomRef) {
     roomRef.child('roll').set({
       playerIdx: state.current,
       val: val,
-      ts: Date.now()
+      ts: ts
     }).catch(err => {
       console.warn('Firebase roll push error:', err);
       state.rolling = false;
+      state.busy = false;
       updateUI();
     });
-  } else {
-    executeDiceRollAnimation(state.current, val);
   }
+
+  // Execute roll animation locally immediately for responsive feedback
+  executeDiceRollAnimation(state.current, val);
 }
 
 bottomDiceBtn.addEventListener('click', () => {
@@ -792,8 +869,10 @@ topDiceBtn.addEventListener('click', () => {
 
 function executeDiceRollAnimation(playerIdx, val) {
   state.rolling = true;
+  state.busy = true;
   state.awaitingSelection = false;
   state.movable = [];
+  lastActivityTs = Date.now();
 
   const isMe = isLocalMode ? (playerIdx === 0) : (playerIdx === localPlayerIdx);
   const activeDiceBtn = isMe ? bottomDiceBtn : topDiceBtn;
@@ -801,20 +880,19 @@ function executeDiceRollAnimation(playerIdx, val) {
   activeDiceBtn.classList.add('rolling');
 
   let rolls = 0;
-  const interval = setInterval(() => {
+  clearInterval(window._diceInterval);
+  window._diceInterval = setInterval(() => {
+    lastActivityTs = Date.now();
     activeDiceBtn.textContent = DICE_EMOJIS[Math.floor(Math.random() * 6)];
     rolls++;
-    if (rolls >= 10) {
-      clearInterval(interval);
+    if (rolls >= 8) {
+      clearInterval(window._diceInterval);
       activeDiceBtn.classList.remove('rolling');
 
       state.dice = val;
       state.rolling = false;
       activeDiceBtn.textContent = DICE_EMOJIS[val - 1];
 
-      // BUG FIX: Always refresh UI after dice animation ends.
-      // Prevents dice button staying disabled when applyRemoteState
-      // fired mid-animation and changed state.current.
       updateUI();
 
       if (val === 6) {
@@ -827,7 +905,9 @@ function executeDiceRollAnimation(playerIdx, val) {
         showTurnBanner('পর পর ৩টি ৬! চাল বাতিল ⚠️');
         state.consecutiveSixes = 0;
         if (isLocalMode || playerIdx === localPlayerIdx) {
-          setTimeout(() => endTurn(playerIdx, false), 1200);
+          setTimeout(() => endTurn(playerIdx, false), 800);
+        } else {
+          setTimeout(() => { state.busy = false; updateUI(); }, 1200);
         }
         return;
       }
@@ -837,41 +917,43 @@ function executeDiceRollAnimation(playerIdx, val) {
       if (moves.length === 0) {
         showTurnBanner('কোনো চাল নেই... 😢');
         if (isLocalMode || playerIdx === localPlayerIdx) {
-          setTimeout(() => endTurn(playerIdx, val === 6), 900);
+          setTimeout(() => endTurn(playerIdx, val === 6), 800);
+        } else {
+          setTimeout(() => { state.busy = false; updateUI(); }, 1200);
         }
         return;
       }
 
-      const allInYard = moves.length > 0 && moves.every(ti => state.tokens[playerIdx][ti].progress === 0);
+      const firstTokenProg = state.tokens[playerIdx][moves[0]].progress;
+      const allIdentical = moves.every(ti => state.tokens[playerIdx][ti].progress === firstTokenProg);
 
-      if (moves.length === 1 || allInYard) {
-        showTurnBanner(allInYard ? 'গুটি বের হচ্ছে... 🚀' : 'গুটি নড়ছে... 🚀');
+      if (moves.length === 1 || allIdentical) {
+        showTurnBanner(firstTokenProg === 0 ? 'গুটি বের হচ্ছে... 🚀' : 'গুটি নড়ছে... 🚀');
         const chosenToken = moves[0];
         state.awaitingSelection = false;
         state.movable = [];
         const ts = Date.now();
 
-        if (!isLocalMode && roomRef) {
-          if (playerIdx === localPlayerIdx) {
+        if (isLocalMode || playerIdx === localPlayerIdx) {
+          if (!isLocalMode && roomRef) {
             lastMoveTs = ts;
             roomRef.child('move').set({ playerIdx: playerIdx, tokenIdx: chosenToken, dice: val, ts: ts }).catch(err => console.warn(err));
-            setTimeout(() => performMove(chosenToken, val, playerIdx), 300);
           }
-        } else {
-          setTimeout(() => performMove(chosenToken, val, playerIdx), 300);
+          setTimeout(() => performMove(chosenToken, val, playerIdx), 220);
         }
         return;
       }
 
       // Multiple legal moves — player must tap a pawn
       showTurnBanner('গুটিতে ট্যাপ করো 🎯');
+      state.busy = false;
       if (isLocalMode || playerIdx === localPlayerIdx) {
         state.awaitingSelection = true;
         state.movable = moves;
       }
       updateUI();
     }
-  }, 60);
+  }, 50);
 }
 
 function performMove(tokenIdx, explicitDice, explicitPlayerIdx) {
@@ -881,6 +963,8 @@ function performMove(tokenIdx, explicitDice, explicitPlayerIdx) {
   state.dice = dice;
   state.awaitingSelection = false;
   state.movable = [];
+  state.busy = true;
+  lastActivityTs = Date.now();
 
   applyMove(movedByPlayer, tokenIdx, dice, ({ captured, reachedHome }) => {
     let getExtraTurn = (dice === 6) || captured || reachedHome;
@@ -900,25 +984,26 @@ function performMove(tokenIdx, explicitDice, explicitPlayerIdx) {
       return;
     }
 
-    // Only the device that owns this player calls endTurn.
-    // Uses captured movedByPlayer, NOT state.current.
     if (isLocalMode || movedByPlayer === localPlayerIdx) {
       endTurn(movedByPlayer, getExtraTurn);
+    } else {
+      state.busy = false;
+      updateUI();
     }
   });
 }
 
 function endTurn(playerIdx, extraTurn) {
-  // BUG FIX: Accept explicit playerIdx instead of reading state.current.
-  // This prevents the race condition where applyRemoteState already
-  // changed state.current, causing 1 - state.current to be wrong.
   if (!extraTurn) {
     state.current = 1 - playerIdx;
     state.consecutiveSixes = 0;
   }
   state.dice = null;
+  state.rolling = false;
+  state.busy = false;
   state.awaitingSelection = false;
   state.movable = [];
+  lastActivityTs = Date.now();
 
   pushState();
   updateUI();
@@ -951,12 +1036,14 @@ function randomRoomCode() {
 
 function pushState() {
   if (isLocalMode || !roomRef) return;
+  const ts = Date.now();
+  lastStateTs = ts;
   roomRef.child('state').set({
     tokens: state.tokens,
     finished: state.finished,
     current: state.current,
     dice: state.dice,
-    ts: Date.now()
+    ts: ts
   }).catch(err => console.warn('Firebase state push error:', err));
 }
 
@@ -970,20 +1057,24 @@ function pushLove(type) {
 
 function applyRemoteState(data) {
   if (!data) return;
-  if (Array.isArray(data.tokens)) state.tokens = data.tokens;
-  if (Array.isArray(data.finished)) state.finished = data.finished;
-  if (typeof data.current === 'number') state.current = data.current;
 
-  // BUG FIX: Handle null dice properly. typeof null === 'object', not 'number',
-  // so the old check never cleared state.dice on the remote device.
-  state.dice = (typeof data.dice === 'number') ? data.dice : null;
+  if (Array.isArray(data.tokens) && !state.animatingToken) {
+    state.tokens = data.tokens;
+  }
+  if (Array.isArray(data.finished)) {
+    state.finished = data.finished;
+  }
+  if (typeof data.current === 'number') {
+    state.current = data.current;
+  }
 
-  // BUG FIX: Clear rolling flag so dice button can be re-enabled.
-  // If applyRemoteState fires while executeDiceRollAnimation is still
-  // running on this device, state.rolling=true would block the UI.
-  state.rolling = false;
+  if (!state.rolling && !state.awaitingSelection) {
+    state.dice = (typeof data.dice === 'number') ? data.dice : null;
+  }
 
   if (!isLocalMode && state.current !== localPlayerIdx) {
+    state.rolling = false;
+    state.busy = false;
     state.awaitingSelection = false;
     state.movable = [];
   }
@@ -1024,7 +1115,20 @@ function attachRoomListeners() {
     const data = snap.val();
     if (!data || data.ts <= lastMoveTs) return;
     lastMoveTs = data.ts;
-    performMove(data.tokenIdx, data.dice, data.playerIdx);
+
+    // Smooth sync: If dice is spinning on remote device, wait for spin to finish before moving pawn!
+    if (state.rolling || state.busy) {
+      let tries = 0;
+      const waitSpin = setInterval(() => {
+        tries++;
+        if (!state.rolling || tries > 25) {
+          clearInterval(waitSpin);
+          performMove(data.tokenIdx, data.dice, data.playerIdx);
+        }
+      }, 40);
+    } else {
+      performMove(data.tokenIdx, data.dice, data.playerIdx);
+    }
   });
 
   roomRef.child('love').on('value', snap => {
