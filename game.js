@@ -372,58 +372,92 @@ function drawBoard() {
 // ------------------------------------------------------------
 // 5. PAWN RENDERING & MULTI-STACKING
 // ------------------------------------------------------------
-function drawPawn(cx, cy, color, isHighlight = false, bounceOffset = 0, scale = 1) {
-  const py = cy - bounceOffset;
-  const rad = cellSize * 0.36 * scale;
+function drawPawn(cx, cy, color, isHighlight = false, bounceOffset = 0, scale = 1, playerIdx = 0, tokenIdx = 0) {
+  const isMovableBounce = isHighlight ? Math.sin(Date.now() / 110) * (cellSize * 0.14) : 0;
+  const py = cy - bounceOffset - isMovableBounce;
+  const rad = cellSize * 0.44 * scale;
 
   ctx.save();
 
-  // Shadow
+  // 1. High contrast Ground Shadow
   ctx.beginPath();
-  ctx.ellipse(cx, cy + rad * 0.7, rad * 0.8, rad * 0.3, 0, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
+  ctx.ellipse(cx, cy + rad * 0.75, rad * 0.85, rad * 0.3, 0, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
   ctx.fill();
 
-  // Movable Glow Ring
+  // 2. Ultra-Prominent Movable Pulsing Ring & Arrow
   if (isHighlight) {
-    const pulse = 1.35 + 0.15 * Math.sin(Date.now() / 150);
+    const pulse = 1.3 + 0.2 * Math.sin(Date.now() / 130);
     ctx.beginPath();
     ctx.arc(cx, py, rad * pulse, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(243, 198, 79, 0.45)';
+    ctx.fillStyle = 'rgba(255, 215, 0, 0.45)';
     ctx.fill();
-    ctx.strokeStyle = PALETTE.gold;
-    ctx.lineWidth = Math.max(2, cellSize * 0.06);
+    ctx.strokeStyle = '#ffbe0b';
+    ctx.lineWidth = Math.max(3, cellSize * 0.08);
     ctx.stroke();
 
-    const arrowY = py - rad * 1.8;
-    ctx.font = `${cellSize * 0.6}px sans-serif`;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    // Floating Animated Bouncing Arrow above movable pawn
+    const arrowY = py - rad * 1.7 - Math.abs(Math.sin(Date.now() / 150)) * (cellSize * 0.15);
+    ctx.font = `bold ${cellSize * 0.65}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     ctx.fillText('👇', cx, arrowY);
   }
 
-  // Base Pedestal
+  // 3. Base Pedestal Ring (Gold Rim)
   ctx.beginPath();
-  ctx.arc(cx, py + rad * 0.3, rad * 0.85, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+  ctx.arc(cx, py + rad * 0.2, rad * 0.95, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.35)';
   ctx.fill();
+  ctx.strokeStyle = '#f3c64f';
+  ctx.lineWidth = Math.max(2, cellSize * 0.05);
+  ctx.stroke();
 
-  // Sphere Head
-  const gradient = ctx.createRadialGradient(cx - rad * 0.3, py - rad * 0.3, rad * 0.1, cx, py, rad);
-  gradient.addColorStop(0, '#ffffff');
-  gradient.addColorStop(0.3, color);
-  gradient.addColorStop(1, '#0f0408');
+  // 4. Vibrant 3D Sphere Head with rich high-contrast gradient
+  const isRed = (playerIdx === 0);
+  const colorStart = '#ffffff';
+  const colorMid = isRed ? '#ff1744' : '#00b0ff';
+  const colorDark = isRed ? '#88001b' : '#0040aa';
+
+  const gradient = ctx.createRadialGradient(cx - rad * 0.35, py - rad * 0.35, rad * 0.08, cx, py, rad);
+  gradient.addColorStop(0, colorStart);
+  gradient.addColorStop(0.35, colorMid);
+  gradient.addColorStop(1, colorDark);
 
   ctx.beginPath();
   ctx.arc(cx, py, rad, 0, Math.PI * 2);
   ctx.fillStyle = gradient;
   ctx.fill();
+
+  // White Crisp Contour Ring
   ctx.strokeStyle = '#ffffff';
-  ctx.lineWidth = Math.max(1.5, cellSize * 0.04);
+  ctx.lineWidth = Math.max(2.5, cellSize * 0.06);
   ctx.stroke();
 
-  ctx.font = `${rad * 0.9}px sans-serif`;
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText('💗', cx, py);
+  // Gold Outer Accent Ring
+  ctx.beginPath();
+  ctx.arc(cx, py, rad * 1.05, 0, Math.PI * 2);
+  ctx.strokeStyle = '#f3c64f';
+  ctx.lineWidth = Math.max(1.5, cellSize * 0.035);
+  ctx.stroke();
+
+  // 5. Pawn Badge/Icon Center (Crown / Avatar Emoji & Token Number)
+  const iconEmoji = isRed ? '🤵' : '👸';
+
+  // Inner Badge Circle
+  ctx.beginPath();
+  ctx.arc(cx, py, rad * 0.48, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(15, 3, 10, 0.65)';
+  ctx.fill();
+  ctx.strokeStyle = '#f3c64f';
+  ctx.lineWidth = Math.max(1, cellSize * 0.03);
+  ctx.stroke();
+
+  // Emoji Avatar Icon
+  ctx.font = `${rad * 0.62}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(iconEmoji, cx, py);
 
   ctx.restore();
 }
@@ -461,7 +495,7 @@ function drawAllTokens() {
       let scale = 1;
 
       if (count > 1) {
-        scale = count > 2 ? 0.65 : 0.75;
+        scale = count > 2 ? 0.7 : 0.8;
         const offset = cellSize * 0.22;
         const subPositions = [
           { x: -offset, y: -offset },
@@ -474,7 +508,7 @@ function drawAllTokens() {
         py += pos.y;
       }
 
-      drawPawn(px, py, p.color, isMovable, 0, scale);
+      drawPawn(px, py, p.color, isMovable, 0, scale, pi, ti);
     });
   });
 
@@ -490,9 +524,9 @@ function drawAllTokens() {
 
       const curX = fromCoords.cx + (toCoords.cx - fromCoords.cx) * anim.t;
       const curY = fromCoords.cy + (toCoords.cy - fromCoords.cy) * anim.t;
-      const bounce = Math.sin(anim.t * Math.PI) * (cellSize * 0.45);
+      const bounce = Math.sin(anim.t * Math.PI) * (cellSize * 0.5);
 
-      drawPawn(curX, curY, p.color, false, bounce, 1.1);
+      drawPawn(curX, curY, p.color, false, bounce, 1.15, anim.playerIdx, anim.tokenIdx);
     }
   }
 }

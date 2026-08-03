@@ -244,37 +244,48 @@
     transform: translate(-50%, -50%) scale(1.05);
   }
 
-  /* Floating Love Dock */
+  /* Horizontal Top Love Reaction Bar (In Top Free Space) */
   #loveDock {
-    position: absolute;
-    right: 8px;
-    top: 50%;
-    transform: translateY(-50%);
     display: flex;
-    flex-direction: column;
-    gap: 10px;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin: 4px auto 6px auto;
+    padding: 6px 20px;
+    background: rgba(35, 12, 22, 0.92);
+    backdrop-filter: blur(12px);
+    border: 1.5px solid var(--gold);
+    border-radius: 28px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55), 0 0 15px var(--gold-glow);
     z-index: 20;
+    flex-shrink: 0;
   }
 
   .loveBtn {
-    width: 44px;
-    height: 44px;
+    width: 42px;
+    height: 42px;
     border-radius: 50%;
     border: 1.5px solid var(--gold);
-    background: rgba(35, 12, 22, 0.88);
+    background: linear-gradient(135deg, rgba(65, 18, 40, 0.95), rgba(25, 6, 15, 0.95));
     backdrop-filter: blur(6px);
-    font-size: 20px;
+    font-size: 21px;
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
-    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.4);
-    transition: transform 0.15s, background 0.15s;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+    transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), background 0.15s, box-shadow 0.15s;
+  }
+
+  .loveBtn:hover {
+    transform: scale(1.15);
+    box-shadow: 0 0 14px var(--gold-glow);
   }
 
   .loveBtn:active {
-    transform: scale(0.85);
-    background: rgba(217, 43, 75, 0.7);
+    transform: scale(0.88);
+    background: rgba(217, 43, 75, 0.9);
   }
 
   /* Falling Emoji Particles */
@@ -450,18 +461,18 @@
     </div>
   </div>
 
+  <!-- Top Free Space Love Reaction Bar -->
+  <div id="loveDock" style="display:none;">
+    <button class="loveBtn" data-type="kiss" title="Kiss">💋</button>
+    <button class="loveBtn" data-type="rose" title="Rose">🌹</button>
+    <button class="loveBtn" data-type="hug" title="Hug">🤗</button>
+    <button class="loveBtn" data-type="care" title="Care">💗</button>
+  </div>
+
   <!-- Central Canvas Game Board Wrapper -->
   <div id="board-wrapper">
     <canvas id="luduCanvas" width="900" height="900"></canvas>
     <div id="turnBanner">তোমার চাল 🎯</div>
-
-    <!-- Floating Love Action Bar -->
-    <div id="loveDock" style="display:none;">
-      <button class="loveBtn" data-type="kiss" title="Kiss">💋</button>
-      <button class="loveBtn" data-type="rose" title="Rose">🌹</button>
-      <button class="loveBtn" data-type="hug" title="Hug">🤗</button>
-      <button class="loveBtn" data-type="care" title="Care">💗</button>
-    </div>
   </div>
 
   <!-- Bottom Player Card (You / Player 0) -->
@@ -532,7 +543,7 @@
 <!-- Firebase & Script Imports -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="firebase-config.js"></script>
-<script src="game.js"></script>
+<script src="firebase-config.js?v=2.0.2"></script>
+<script src="game.js?v=2.0.2"></script>
 </body>
 </html>
