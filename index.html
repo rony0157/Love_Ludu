@@ -289,6 +289,17 @@
     background: rgba(217, 43, 75, 0.9);
   }
 
+  .loveBtn.musicBtn {
+    border-color: #ff4d6d;
+    background: linear-gradient(135deg, rgba(217, 43, 75, 0.95), rgba(130, 15, 45, 0.95));
+  }
+
+  .loveBtn.musicBtn.muted {
+    filter: grayscale(0.8);
+    opacity: 0.65;
+    background: rgba(30, 10, 20, 0.85);
+  }
+
   /* Falling Emoji Particles */
   .rainDrop {
     position: fixed;
@@ -462,12 +473,13 @@
     </div>
   </div>
 
-  <!-- Top Free Space Love Reaction Bar -->
+  <!-- Top Free Space Love Reaction Bar & Cute Music Toggle -->
   <div id="loveDock" style="display:none;">
     <button class="loveBtn" data-type="kiss" title="Kiss">💋</button>
     <button class="loveBtn" data-type="rose" title="Rose">🌹</button>
     <button class="loveBtn" data-type="hug" title="Hug">🤗</button>
     <button class="loveBtn" data-type="care" title="Care">💗</button>
+    <button class="loveBtn musicBtn" id="musicBtn" title="Music ON/OFF">🎵</button>
   </div>
 
   <!-- Central Canvas Game Board Wrapper -->
@@ -544,7 +556,7 @@
 <!-- Firebase & Script Imports -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="firebase-config.js?v=2.0.3"></script>
-<script src="game.js?v=2.0.3"></script>
+<script src="firebase-config.js?v=2.0.4"></script>
+<script src="game.js?v=2.0.4"></script>
 </body>
 </html>

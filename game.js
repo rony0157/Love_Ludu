@@ -548,6 +548,7 @@ function gameLoop(timestamp) {
     if (anim.t >= 1) {
       anim.t = 0;
       anim.currentStep++;
+      if (typeof playStepSound === 'function') playStepSound();
       if (anim.currentStep >= anim.path.length - 1) {
         const cb = anim.onComplete;
         state.animatingToken = null;
@@ -899,6 +900,10 @@ function handleDiceClick(clickedPlayerIdx) {
   state.rolling = true;
   state.busy = true;
 
+  if (typeof initAudio === 'function') initAudio();
+  if (typeof playRollSound === 'function') playRollSound();
+  if (typeof startBGM === 'function') startBGM();
+
   const ts = Date.now();
   lastRollTs = ts;
   lastActivityTs = ts;
@@ -1122,11 +1127,173 @@ function pushState() {
 }
 
 function pushLove(type) {
+  if (typeof playLoveEmojiSound === 'function') playLoveEmojiSound();
   if (isLocalMode || !roomRef) {
     rainEmojis([EMOJI[type]], 20);
     return;
   }
   roomRef.child('love').set({ type, from: localPlayerIdx, ts: Date.now() }).catch(err => console.warn(err));
+}
+
+function showWin(playerIdx) {
+  const p = PLAYERS[playerIdx];
+  const other = PLAYERS[1 - playerIdx];
+
+  if (typeof playWinMelody === 'function') playWinMelody();
+
+  document.getElementById('winText').textContent = `🏆 ${p.name} জিতে গেছে!`;
+  document.getElementById('winSub').textContent = `${other.name}, পরের বার তুমি জিতবে... একটা 💋 পাওনা রইল!`;
+  document.getElementById('winOverlay').style.display = 'flex';
+  rainEmojis(['🌹', '💖', '✨', '💋', '🎉'], 30);
+}
+
+document.querySelectorAll('.loveBtn').forEach(btn => {
+  if (btn.dataset.type) {
+    btn.addEventListener('click', () => {
+      pushLove(btn.dataset.type);
+    });
+  }
+});
+
+function rainEmojis(emojiList, count) {
+  for (let i = 0; i < count; i++) {
+    setTimeout(() => {
+      const el = document.createElement('div');
+      el.className = 'rainDrop';
+      el.textContent = emojiList[Math.floor(Math.random() * emojiList.length)];
+      el.style.left = Math.random() * 92 + 'vw';
+      el.style.fontSize = (22 + Math.random() * 22) + 'px';
+      const dur = 2.2 + Math.random() * 1.4;
+      el.style.animationDuration = dur + 's';
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), dur * 1000 + 100);
+    }, i * 75);
+  }
+}
+
+// ------------------------------------------------------------
+// 13. CUTE ROMANTIC MUSIC & SOUND FX ENGINE (Web Audio API)
+// ------------------------------------------------------------
+let audioCtx = null;
+let bgmInterval = null;
+let isMusicMuted = false;
+let isBgmPlaying = false;
+
+function initAudio() {
+  if (!audioCtx) {
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    if (AudioContext) audioCtx = new AudioContext();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') {
+    audioCtx.resume();
+  }
+}
+
+function playTone(freq, type = 'sine', duration = 0.25, vol = 0.12) {
+  if (isMusicMuted) return;
+  try {
+    initAudio();
+    if (!audioCtx) return;
+
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+
+    gain.gain.setValueAtTime(vol, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + duration);
+
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+
+    osc.start();
+    osc.stop(audioCtx.currentTime + duration);
+  } catch (e) {}
+}
+
+function playRollSound() {
+  if (isMusicMuted) return;
+  for (let i = 0; i < 5; i++) {
+    setTimeout(() => {
+      playTone(320 + Math.random() * 380, 'triangle', 0.08, 0.12);
+    }, i * 40);
+  }
+}
+
+function playStepSound() {
+  if (isMusicMuted) return;
+  playTone(523.25, 'sine', 0.1, 0.18);
+}
+
+function playLoveEmojiSound() {
+  if (isMusicMuted) return;
+  const notes = [659.25, 783.99, 987.77, 1046.50];
+  notes.forEach((freq, idx) => {
+    setTimeout(() => playTone(freq, 'sine', 0.25, 0.15), idx * 60);
+  });
+}
+
+function playWinMelody() {
+  if (isMusicMuted) return;
+  const melody = [
+    { f: 523.25, d: 0.2 }, { f: 659.25, d: 0.2 }, { f: 783.99, d: 0.2 },
+    { f: 1046.50, d: 0.6 }
+  ];
+  melody.forEach((note, idx) => {
+    setTimeout(() => playTone(note.f, 'sine', note.d, 0.22), idx * 200);
+  });
+}
+
+// Romantic Kalimba Lullaby BGM Generator
+const ROMANTIC_MELODY = [
+  523.25, 587.33, 659.25, 783.99, 659.25, 587.33,
+  523.25, 659.25, 783.99, 880.00, 783.99, 659.25,
+  698.46, 659.25, 587.33, 523.25
+];
+let bgmNoteIdx = 0;
+
+function startBGM() {
+  if (isBgmPlaying || isMusicMuted) return;
+  isBgmPlaying = true;
+  clearInterval(bgmInterval);
+  bgmInterval = setInterval(() => {
+    if (isMusicMuted || !isBgmPlaying) return;
+    const freq = ROMANTIC_MELODY[bgmNoteIdx % ROMANTIC_MELODY.length];
+    bgmNoteIdx++;
+    playTone(freq, 'sine', 0.55, 0.05);
+  }, 480);
+}
+
+function stopBGM() {
+  isBgmPlaying = false;
+  clearInterval(bgmInterval);
+}
+
+function toggleMusic() {
+  isMusicMuted = !isMusicMuted;
+  const musicBtn = document.getElementById('musicBtn');
+  if (musicBtn) {
+    if (isMusicMuted) {
+      musicBtn.textContent = '🔇';
+      musicBtn.classList.add('muted');
+      stopBGM();
+    } else {
+      musicBtn.textContent = '🎵';
+      musicBtn.classList.remove('muted');
+      initAudio();
+      startBGM();
+      playTone(880, 'sine', 0.2, 0.15);
+    }
+  }
+}
+
+const musicBtn = document.getElementById('musicBtn');
+if (musicBtn) {
+  musicBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    toggleMusic();
+  });
 }
 
 function applyRemoteState(data) {
