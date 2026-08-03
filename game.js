@@ -120,40 +120,70 @@ let winShown = false;
 let lastActivityTs = Date.now();
 
 // ------------------------------------------------------------
-// WATCHDOG ENGINE — ZERO-LOCK INFINITE GAME GUARANTEE
+// WATCHDOG ENGINE & AFK TIMEOUT — ZERO-LOCK INFINITE GAME GUARANTEE
 // ------------------------------------------------------------
+function forceHealGameState() {
+  if (winShown) return;
+  if (state.animatingToken) {
+    if (typeof state.animatingToken.onComplete === 'function') {
+      try { state.animatingToken.onComplete(); } catch (e) {}
+    }
+    state.animatingToken = null;
+  }
+  state.rolling = false;
+  state.busy = false;
+  clearInterval(window._diceInterval);
+
+  if (typeof state.dice === 'number' && state.dice >= 1 && state.dice <= 6) {
+    const moves = legalMoves(state.current, state.dice);
+    if (moves.length > 0) {
+      state.awaitingSelection = true;
+      state.movable = moves;
+    } else {
+      endTurn(state.current, false);
+    }
+  } else {
+    state.awaitingSelection = false;
+    state.movable = [];
+  }
+  lastActivityTs = Date.now();
+  updateUI();
+}
+
+let awaitingSelectionStartTs = 0;
+
 setInterval(() => {
   if (winShown) return;
   const now = Date.now();
 
-  // If busy/rolling/animating state hangs for > 3.2 seconds without activity, force-heal!
-  if ((state.busy || state.rolling || state.animatingToken) && (now - lastActivityTs > 3200)) {
-    console.warn('[LoveLudu Watchdog] Stuck state auto-healed!');
+  // Watchdog 1: Auto-heal if busy/rolling/animating state hangs > 2.2s without activity
+  if ((state.busy || state.rolling || state.animatingToken) && (now - lastActivityTs > 2200)) {
+    console.warn('[LoveLudu Watchdog] Stuck busy state auto-healed!');
+    forceHealGameState();
+    return;
+  }
 
-    if (state.animatingToken) {
-      if (typeof state.animatingToken.onComplete === 'function') {
-        try { state.animatingToken.onComplete(); } catch (e) {}
-      }
-      state.animatingToken = null;
-    }
-    state.rolling = false;
-    state.busy = false;
-    clearInterval(window._diceInterval);
-
-    if (typeof state.dice === 'number' && state.dice >= 1 && state.dice <= 6) {
-      const moves = legalMoves(state.current, state.dice);
-      if (moves.length > 0) {
-        state.awaitingSelection = true;
-        state.movable = moves;
-      } else {
-        endTurn(state.current, false);
-      }
-    } else {
+  // Watchdog 2: AFK Auto-Move if awaiting selection > 7s without player tapping
+  if (state.awaitingSelection && state.movable.length > 0) {
+    if (!awaitingSelectionStartTs) {
+      awaitingSelectionStartTs = now;
+    } else if (now - awaitingSelectionStartTs > 7000) {
+      console.warn('[LoveLudu Watchdog] AFK Auto-moving pawn...');
+      awaitingSelectionStartTs = 0;
+      const chosenToken = state.movable[0];
+      const dice = state.dice || 1;
+      const player = state.current;
       state.awaitingSelection = false;
       state.movable = [];
+      state.busy = true;
+
+      if (!isLocalMode && roomRef) {
+        roomRef.child('move').set({ playerIdx: player, tokenIdx: chosenToken, dice: dice, ts: now }).catch(err => console.warn(err));
+      }
+      performMove(chosenToken, dice, player);
     }
-    lastActivityTs = Date.now();
-    updateUI();
+  } else {
+    awaitingSelectionStartTs = 0;
   }
 }, 1000);
 
