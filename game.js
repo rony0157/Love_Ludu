@@ -761,6 +761,8 @@ const topStatus = document.getElementById('topStatus');
 const bottomStatus = document.getElementById('bottomStatus');
 const topScore = document.getElementById('topScore');
 const bottomScore = document.getElementById('bottomScore');
+const topAvatar = document.getElementById('topAvatar');
+const bottomAvatar = document.getElementById('bottomAvatar');
 const topDiceBtn = document.getElementById('topDiceBtn');
 const bottomDiceBtn = document.getElementById('bottomDiceBtn');
 const turnBanner = document.getElementById('turnBanner');
@@ -772,11 +774,19 @@ function updateUI() {
   if (isLocalMode || localPlayerIdx === 0) {
     bottomName.textContent = hostName;
     topName.textContent = guestName;
+    if (bottomAvatar) bottomAvatar.textContent = PLAYERS[0].avatar;
+    if (topAvatar) topAvatar.textContent = PLAYERS[1].avatar;
+    bottomCard.classList.add('p-red'); bottomCard.classList.remove('p-blue');
+    topCard.classList.add('p-blue'); topCard.classList.remove('p-red');
     bottomScore.textContent = `${state.finished[0]}/4`;
     topScore.textContent = `${state.finished[1]}/4`;
   } else {
     bottomName.textContent = guestName;
     topName.textContent = hostName;
+    if (bottomAvatar) bottomAvatar.textContent = PLAYERS[1].avatar;
+    if (topAvatar) topAvatar.textContent = PLAYERS[0].avatar;
+    bottomCard.classList.add('p-blue'); bottomCard.classList.remove('p-red');
+    topCard.classList.add('p-red'); topCard.classList.remove('p-blue');
     bottomScore.textContent = `${state.finished[1]}/4`;
     topScore.textContent = `${state.finished[0]}/4`;
   }

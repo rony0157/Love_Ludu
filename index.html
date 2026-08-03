@@ -244,21 +244,22 @@
     transform: translate(-50%, -50%) scale(1.05);
   }
 
-  /* Horizontal Top Love Reaction Bar (In Top Free Space) */
+  /* Horizontal Top Love Reaction Bar (In Red-Box Free Space) */
   #loveDock {
     display: flex;
     flex-direction: row;
     align-items: center;
-    justify-content: center;
-    gap: 14px;
-    margin: 4px auto 6px auto;
-    padding: 6px 20px;
-    background: rgba(35, 12, 22, 0.92);
+    justify-content: space-around;
+    width: 100%;
+    max-width: 420px;
+    margin: 8px auto 8px auto;
+    padding: 6px 18px;
+    background: rgba(35, 12, 22, 0.94);
     backdrop-filter: blur(12px);
     border: 1.5px solid var(--gold);
     border-radius: 28px;
-    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.55), 0 0 15px var(--gold-glow);
-    z-index: 20;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.6), 0 0 15px var(--gold-glow);
+    z-index: 25;
     flex-shrink: 0;
   }
 
@@ -543,7 +544,7 @@
 <!-- Firebase & Script Imports -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="firebase-config.js?v=2.0.2"></script>
-<script src="game.js?v=2.0.2"></script>
+<script src="firebase-config.js?v=2.0.3"></script>
+<script src="game.js?v=2.0.3"></script>
 </body>
 </html>
