@@ -463,6 +463,7 @@
       <div class="name-box">
         <div class="player-name" id="topName">পাপড়ি</div>
         <div class="player-status" id="topStatus">অপেক্ষায়...</div>
+        <div class="player-stats-badge" id="topStats">🏆 0 Wins | 💖 0 Pts</div>
       </div>
     </div>
     <div class="player-right">
@@ -473,13 +474,14 @@
     </div>
   </div>
 
-  <!-- Top Free Space Love Reaction Bar & Cute Music Toggle -->
+  <!-- Top Free Space Love Reaction Bar, Music & Leaderboard Buttons -->
   <div id="loveDock" style="display:none;">
     <button class="loveBtn" data-type="kiss" title="Kiss">💋</button>
     <button class="loveBtn" data-type="rose" title="Rose">🌹</button>
     <button class="loveBtn" data-type="hug" title="Hug">🤗</button>
     <button class="loveBtn" data-type="care" title="Care">💗</button>
     <button class="loveBtn musicBtn" id="musicBtn" title="Music ON/OFF">🎵</button>
+    <button class="loveBtn leaderBtn" id="leaderboardBtn" title="Leaderboard">🏆</button>
   </div>
 
   <!-- Central Canvas Game Board Wrapper -->
@@ -495,6 +497,7 @@
       <div class="name-box">
         <div class="player-name" id="bottomName">তুমি</div>
         <div class="player-status" id="bottomStatus">তোমার চাল</div>
+        <div class="player-stats-badge" id="bottomStats">🏆 0 Wins | 💖 0 Pts</div>
       </div>
     </div>
     <div class="player-right">
@@ -510,7 +513,7 @@
 <div id="setup">
   <div class="card" id="lobbyChoose">
     <h2>Love Ludu 💑</h2>
-    <p class="sub">পাপড়ি ও তোমার জন্য রোমান্টিক লুডু গেম</p>
+    <p class="sub">পাপড়ি ও তোমার স্থায়ী রোমান্টিক গেম</p>
     
     <div class="field">
       <label>তোমার নাম</label>
@@ -518,18 +521,20 @@
     </div>
 
     <div class="btn-group">
-      <button id="createRoomBtn" class="lobbyBtn">🌐 নতুন অনলাইন রুম বানাও</button>
+      <button id="quickCoupleRoomBtn" class="lobbyBtn gold" style="font-size:16px; padding:14px;">💖 আমাদের স্পেশাল রুমে ঢুকো (Quick Join)</button>
+
+      <div style="text-align:center; margin:4px 0; color:#c796a6; font-size:12px;">— অথবা নতুন রুম —</div>
+
+      <button id="createRoomBtn" class="lobbyBtn">🌐 নতুন রুম বানাও</button>
       
-      <div style="text-align:center; margin:4px 0; color:#c796a6; font-size:12px;">— অথবা —</div>
-      
-      <div class="field" style="margin-bottom:6px;">
+      <div class="field" style="margin-bottom:4px; margin-top:6px;">
         <input id="joinCode" maxlength="6" placeholder="রুম কোড (যেমন: LV9K2)" style="text-transform:uppercase; text-align:center; letter-spacing:2px;" autocomplete="off" />
       </div>
-      <button id="joinRoomBtn" class="lobbyBtn sec">🔗 অনলাইনে জয়েন করো</button>
+      <button id="joinRoomBtn" class="lobbyBtn sec">🔗 কোড দিয়ে জয়েন করো</button>
 
       <div style="text-align:center; margin:4px 0; color:#c796a6; font-size:12px;">— অথবা —</div>
 
-      <button id="passPlayBtn" class="lobbyBtn gold">📱 একই ফোনে ২ জন খেলো (Offline)</button>
+      <button id="passPlayBtn" class="lobbyBtn sec" style="background:linear-gradient(135deg, #4a2c5a, #23122c);">📱 একই ফোনে ২ জন খেলো (Offline)</button>
     </div>
     
     <p id="lobbyError" style="color:#ff6b8b; font-size:12.5px; text-align:center; margin-top:12px; margin-bottom:0;"></p>
@@ -553,6 +558,27 @@
   </div>
 </div>
 
+<!-- Lifetime Leaderboard Modal -->
+<div id="leaderboardModal" style="position:fixed; inset:0; z-index:80; display:none; align-items:center; justify-content:center; background:rgba(15,3,10,0.85); backdrop-filter:blur(10px); padding:16px;">
+  <div class="card" style="text-align:center; max-width:400px; width:92vw;">
+    <h2 style="color:var(--gold); font-size:22px; margin-bottom:4px;">🏆 আজীবনের স্কোরবোর্ড</h2>
+    <p class="sub" style="font-size:12.5px; margin-bottom:16px;">পাপড়ি ও তোমার মোট খেলার রোমান্টিক রেকর্ড</p>
+    
+    <div id="leaderboardList" style="display:flex; flex-direction:column; gap:12px; margin-bottom:18px;">
+      <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:14px; display:flex; align-items:center; justify-content:space-between; border:1px solid rgba(243,198,79,0.3);">
+        <span style="font-weight:700; color:#fff;">🤵 তুমি</span>
+        <span style="color:var(--gold); font-weight:700;" id="lbHostStats">0 Wins (0 Pts)</span>
+      </div>
+      <div style="background:rgba(255,255,255,0.05); padding:12px; border-radius:14px; display:flex; align-items:center; justify-content:space-between; border:1px solid rgba(243,198,79,0.3);">
+        <span style="font-weight:700; color:#fff;">👸 পাপড়ি</span>
+        <span style="color:var(--gold); font-weight:700;" id="lbGuestStats">0 Wins (0 Pts)</span>
+      </div>
+    </div>
+    
+    <button id="closeLeaderboardBtn" class="lobbyBtn gold">বন্ধ করো ❌</button>
+  </div>
+</div>
+
 <!-- Background Romantic Music Audio Stream -->
 <audio id="bgmAudio" loop preload="auto">
   <source src="https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3" type="audio/mpeg">
@@ -561,7 +587,7 @@
 <!-- Firebase & Script Imports -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
-<script src="firebase-config.js?v=2.0.6"></script>
-<script src="game.js?v=2.0.6"></script>
+<script src="firebase-config.js?v=2.0.7"></script>
+<script src="game.js?v=2.0.7"></script>
 </body>
 </html>

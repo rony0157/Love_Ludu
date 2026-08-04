@@ -1139,12 +1139,30 @@ function showWin(playerIdx) {
   const p = PLAYERS[playerIdx];
   const other = PLAYERS[1 - playerIdx];
 
+  if (typeof recordWinStats === 'function') recordWinStats(playerIdx);
   if (typeof playWinMelody === 'function') playWinMelody();
 
   document.getElementById('winText').textContent = `🏆 ${p.name} জিতে গেছে!`;
   document.getElementById('winSub').textContent = `${other.name}, পরের বার তুমি জিতবে... একটা 💋 পাওনা রইল!`;
   document.getElementById('winOverlay').style.display = 'flex';
   rainEmojis(['🌹', '💖', '✨', '💋', '🎉'], 30);
+}
+
+const leaderboardBtn = document.getElementById('leaderboardBtn');
+const closeLeaderboardBtn = document.getElementById('closeLeaderboardBtn');
+const leaderboardModal = document.getElementById('leaderboardModal');
+
+if (leaderboardBtn) {
+  leaderboardBtn.addEventListener('click', () => {
+    if (typeof updateStatsUI === 'function') updateStatsUI();
+    if (leaderboardModal) leaderboardModal.style.display = 'flex';
+  });
+}
+
+if (closeLeaderboardBtn) {
+  closeLeaderboardBtn.addEventListener('click', () => {
+    if (leaderboardModal) leaderboardModal.style.display = 'none';
+  });
 }
 
 document.querySelectorAll('.loveBtn').forEach(btn => {
@@ -1434,16 +1452,113 @@ function clearSession() {
   } catch (e) {}
 }
 
+let playerStatsData = {
+  p1: { wins: 0, points: 0 },
+  p2: { wins: 0, points: 0 }
+};
+
+function fetchLifetimeStats() {
+  if (typeof db === 'undefined' || !roomRef) return;
+  roomRef.child('stats').on('value', snap => {
+    const data = snap.val();
+    if (data) {
+      playerStatsData = data;
+      updateStatsUI();
+    }
+  });
+}
+
+function updateStatsUI() {
+  const topStatsEl = document.getElementById('topStats');
+  const bottomStatsEl = document.getElementById('bottomStats');
+  const lbHostStats = document.getElementById('lbHostStats');
+  const lbGuestStats = document.getElementById('lbGuestStats');
+
+  const p1 = playerStatsData.p1 || { wins: 0, points: 0 };
+  const p2 = playerStatsData.p2 || { wins: 0, points: 0 };
+
+  if (isLocalMode || localPlayerIdx === 0) {
+    if (bottomStatsEl) bottomStatsEl.textContent = `🏆 ${p1.wins || 0} Wins | 💖 ${p1.points || 0} Pts`;
+    if (topStatsEl) topStatsEl.textContent = `🏆 ${p2.wins || 0} Wins | 💖 ${p2.points || 0} Pts`;
+  } else {
+    if (bottomStatsEl) bottomStatsEl.textContent = `🏆 ${p2.wins || 0} Wins | 💖 ${p2.points || 0} Pts`;
+    if (topStatsEl) topStatsEl.textContent = `🏆 ${p1.wins || 0} Wins | 💖 ${p1.points || 0} Pts`;
+  }
+
+  if (lbHostStats) lbHostStats.textContent = `${p1.wins || 0} Wins (${p1.points || 0} Pts)`;
+  if (lbGuestStats) lbGuestStats.textContent = `${p2.wins || 0} Wins (${p2.points || 0} Pts)`;
+}
+
+function recordWinStats(winnerIdx) {
+  if (typeof db === 'undefined' || !roomRef) return;
+  const winnerKey = (winnerIdx === 0) ? 'p1' : 'p2';
+  const curWins = (playerStatsData[winnerKey] && playerStatsData[winnerKey].wins) || 0;
+  const curPts = (playerStatsData[winnerKey] && playerStatsData[winnerKey].points) || 0;
+
+  roomRef.child(`stats/${winnerKey}`).set({
+    wins: curWins + 1,
+    points: curPts + 50
+  }).catch(err => console.warn(err));
+}
+
 function enterGameScreen() {
   document.getElementById('setup').style.display = 'none';
   document.getElementById('loveDock').style.display = 'flex';
   saveSession();
   updateUI();
+  updateStatsUI();
 }
 
 // ------------------------------------------------------------
 // 11. BUTTON LOBBY HANDLERS
 // ------------------------------------------------------------
+const quickCoupleRoomBtn = document.getElementById('quickCoupleRoomBtn');
+if (quickCoupleRoomBtn) {
+  quickCoupleRoomBtn.addEventListener('click', () => {
+    const name = document.getElementById('myName').value.trim() || 'তুমি';
+    roomCode = 'LOVE99';
+    isLocalMode = false;
+
+    if (typeof db === 'undefined') {
+      document.getElementById('lobbyError').textContent = 'Firebase config পাওয়া যায়নি।';
+      return;
+    }
+
+    roomRef = db.ref('rooms/' + roomCode);
+    roomRef.get().then(snap => {
+      const data = snap.val();
+      if (!data || !data.players || !data.players.p1) {
+        localPlayerIdx = 0;
+        PLAYERS[0].name = name;
+        roomRef.set({
+          players: { p1: name },
+          state: { tokens: state.tokens, finished: [0, 0], current: 0, dice: null, ts: Date.now() }
+        }).then(() => {
+          attachRoomListeners();
+          fetchLifetimeStats();
+          enterGameScreen();
+        });
+      } else if (data.players.p1 === name || data.players.p1 === 'তুমি') {
+        localPlayerIdx = 0;
+        PLAYERS[0].name = name;
+        attachRoomListeners();
+        fetchLifetimeStats();
+        enterGameScreen();
+      } else {
+        localPlayerIdx = 1;
+        PLAYERS[1].name = name;
+        roomRef.child('players/p2').set(name).then(() => {
+          attachRoomListeners();
+          fetchLifetimeStats();
+          enterGameScreen();
+        });
+      }
+    }).catch(err => {
+      console.error(err);
+    });
+  });
+}
+
 document.getElementById('createRoomBtn').addEventListener('click', () => {
   const name = document.getElementById('myName').value.trim() || 'তুমি';
   if (typeof db === 'undefined') {
@@ -1473,6 +1588,7 @@ document.getElementById('createRoomBtn').addEventListener('click', () => {
     };
 
     attachRoomListeners();
+    fetchLifetimeStats();
   }).catch(err => {
     document.getElementById('lobbyError').innerHTML = 'রুম বানাতে সমস্যা হয়েছে! ⚠️ Firebase Console-এ <b>Realtime Database</b> ক্রিয়েট করা আছে কিনা চেক করুন।';
     console.error('Firebase Room Creation Error:', err);
