@@ -1414,9 +1414,30 @@ function attachRoomListeners() {
   });
 }
 
+function saveSession() {
+  try {
+    const sessionData = {
+      roomCode: roomCode || null,
+      localPlayerIdx: localPlayerIdx,
+      isLocalMode: isLocalMode,
+      p1Name: PLAYERS[0].name,
+      p2Name: PLAYERS[1].name,
+      ts: Date.now()
+    };
+    localStorage.setItem('loveLuduActiveSession', JSON.stringify(sessionData));
+  } catch (e) {}
+}
+
+function clearSession() {
+  try {
+    localStorage.removeItem('loveLuduActiveSession');
+  } catch (e) {}
+}
+
 function enterGameScreen() {
   document.getElementById('setup').style.display = 'none';
   document.getElementById('loveDock').style.display = 'flex';
+  saveSession();
   updateUI();
 }
 
@@ -1526,3 +1547,44 @@ function rainEmojis(emojiList, count) {
     }, i * 75);
   }
 }
+
+function tryAutoReconnect() {
+  try {
+    const raw = localStorage.getItem('loveLuduActiveSession');
+    if (!raw) return;
+    const session = JSON.parse(raw);
+
+    // If session is older than 12 hours, discard
+    if (Date.now() - session.ts > 12 * 3600 * 1000) {
+      clearSession();
+      return;
+    }
+
+    if (session.isLocalMode) {
+      isLocalMode = true;
+      PLAYERS[0].name = session.p1Name || 'তুমি';
+      PLAYERS[1].name = session.p2Name || 'পাপড়ি';
+      enterGameScreen();
+    } else if (session.roomCode && typeof db !== 'undefined') {
+      roomCode = session.roomCode;
+      localPlayerIdx = session.localPlayerIdx;
+      isLocalMode = false;
+      if (session.p1Name) PLAYERS[0].name = session.p1Name;
+      if (session.p2Name) PLAYERS[1].name = session.p2Name;
+
+      roomRef = db.ref('rooms/' + roomCode);
+      roomRef.get().then(snap => {
+        if (snap.exists()) {
+          console.log('[LoveLudu] Auto-reconnecting to active room:', roomCode);
+          attachRoomListeners();
+          enterGameScreen();
+        } else {
+          clearSession();
+        }
+      }).catch(() => {});
+    }
+  } catch (e) {}
+}
+
+// Auto-run reconnect on page load
+setTimeout(tryAutoReconnect, 100);
